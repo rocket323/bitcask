@@ -8,13 +8,15 @@ var (
     ErrNotFound = fmt.Errorf("not found")
 )
 
-struct BitCask {
-    dir         string,
-    keyDir      KeyDir,
-    activeFile  DataFile,
+type BitCask struct {
+    dir         string
+    keyDir      *KeyDir
+    activeFile  *DataFile
+    mu          *sync.RWMutex
 }
 
 func Open(dir string, opts options) (*BitCask, error) {
+
 }
 
 func Open(dir string) (*BitCask, error) {

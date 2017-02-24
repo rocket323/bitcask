@@ -1,7 +1,8 @@
 package bitcask
 
 import (
-    fmt
+    "fmt"
+    "sync"
 )
 
 var (
@@ -15,32 +16,36 @@ type BitCask struct {
     mu          *sync.RWMutex
 }
 
-func Open(dir string, opts options) (*BitCask, error) {
-
-}
-
-func Open(dir string) (*BitCask, error) {
+func Open(dir string, opts Options) (*BitCask, error) {
+    return nil, nil
 }
 
 func (bc *BitCask) Get(key string) ([]byte, error) {
+    return nil, nil
 }
 
 func (bc *BitCask) Set(key string, val []byte) error {
+    return nil
 }
 
 func (bc *BitCask) Del(key string) error {
+    return nil
 }
 
 func (bc *BitCask) ListKeys() ([]string, error) {
+    return nil, nil
 }
 
 func (bc *BitCask) Merge() error {
+    return nil
 }
 
 func (bc *BitCask) Sync() error {
+    return nil
 }
 
 func (bc *BitCask) Close() error {
+    return nil
 }
 
 

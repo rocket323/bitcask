@@ -3,7 +3,7 @@ package bitcask
 import (
 )
 
-type dirItem struct {
+type DirItem struct {
     fileId      int64
     valueSize   int64
     valuePos    int64
@@ -11,10 +11,17 @@ type dirItem struct {
 }
 
 type KeyDir struct {
-    mp      map[string]*dirItem
+    mp      map[string]*DirItem
 }
 
-func (kd *KeyDir) Get(key string) (*dirItem, error) {
+func NewKeyDir() (*KeyDir, error) {
+    kd := &KeyDir {
+        mp: make(map[string]*DirItem)
+    }
+    return ke, nil
+}
+
+func (kd *KeyDir) Get(key string) (*DirItem, error) {
     v, ok := kd.mp[key]
     if !ok {
         return nil, ErrNotFound
@@ -22,7 +29,7 @@ func (kd *KeyDir) Get(key string) (*dirItem, error) {
     return v, nil
 }
 
-func (kd *KeyDir) Put(key string, di *dirItem) error {
+func (kd *KeyDir) Put(key string, di *DirItem) error {
     kd.mp[key] = di
     return nil
 }

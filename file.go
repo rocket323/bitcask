@@ -8,14 +8,16 @@ import (
 type RandomAccessFile struct {
     f       *os.File
     size    int64
+    id      int64
+    offset  int64
 }
 
-func NewRandomAccessFile(file string, bool create) (*RandomAccessFile, error) {
+func NewRandomAccessFile(name string, bool create) (*RandomAccessFile, error) {
     flags := os.O_RDWR
     if create {
         flags |= os.O_CREATE
     }
-    f, err := os.OpenFile(file, flags, 0644)
+    f, err := os.OpenFile(name, flags, 0644)
     if err != nil {
         log.Fatal(err)
         return nil, err
@@ -27,11 +29,24 @@ func NewRandomAccessFile(file string, bool create) (*RandomAccessFile, error) {
         return nil, err
     }
 
+    base := strings.TrimSuffix(name, filepath.Ext(name))
+    id, err := strconv.ParseInt(base, 10, 64)
+    if err != nil {
+        log.Fatal(err)
+        return nil, err
+    }
+
     raf := &RandomAccessFile {
         f: f,
         size: fi.Size(),
+        id: id,
     }
     return raf, nil
+}
+
+func (raf *RandomAccessFile) Seek(offset int64, whence int) error {
+    _, err := raf.f.Seek(offset, whence)
+    return err
 }
 
 func (raf *RandomAccessFile) ReadAt(offset int64, len int64) ([]byte, error) {
@@ -71,6 +86,10 @@ func (raf *RandomAccessFile) Append(p []byte) error {
 
 func (raf *RandomAccessFile) Size() int64 {
     return raf.size
+}
+
+func (raf *RandomAccessFile) Offset() int64 {
+    return raf.offset
 }
 
 func (raf *RandomAccessFile) Close() error {

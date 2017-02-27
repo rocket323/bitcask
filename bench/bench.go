@@ -3,12 +3,14 @@ package main
 import (
     "fmt"
     "flag"
-    "rand"
+    "math/rand"
+    "time"
+    "log"
     "bitcask"
 )
 
 var (
-    bc *bitcask.Bitcask
+    bc *bitcask.BitCask
     num int
     valueSize int
     dbPath string
@@ -34,24 +36,23 @@ func BenchRandomSet(num int) {
     end := time.Now()
     d := end.Sub(start)
     fmt.Printf("set finish in %f seconds\n", d.Seconds())
-    fmt.Printf("%f qps\n", num / d.Seconds())
-    writeMB := num * valueSize / 1e6
+    fmt.Printf("%f qps\n", float64(num) / d.Seconds())
+    writeMB := float64(num * valueSize) / 1e6
     fmt.Printf("%f MB/s\n", writeMB / d.Seconds())
-    fmt.Printf("%f micros/op\n", d.Seconds() * 1e6 / num)
+    fmt.Printf("%f micros/op\n", d.Seconds() * 1e6 / float64(num))
 }
 
 func BenchRandomGet(num int) {
     start := time.Now()
-    value := make([]byte, valueSize)
     var found = 0
     for i := 0; i < num; i++ {
         key := fmt.Sprintf("%9d", rand.Int() % num)
-        err := bc.Get(key, value)
+        _, err := bc.Get(key)
         if err != nil && err != bitcask.ErrNotFound {
             log.Fatal(err)
             panic(err)
         }
-        if err == 0 {
+        if err == nil {
             found++
         }
     }
@@ -59,10 +60,10 @@ func BenchRandomGet(num int) {
     d := end.Sub(start)
     fmt.Printf("get finish in %f seconds\n", d.Seconds())
     fmt.Printf("found %d out of %d\n", found, num)
-    fmt.Printf("%f qps\n", num / d.Seconds())
-    writeMB := num * valueSize / 1e6
+    fmt.Printf("%f qps\n", float64(num) / d.Seconds())
+    writeMB := float64(num * valueSize) / 1e6
     fmt.Printf("%f MB/s\n", writeMB / d.Seconds())
-    fmt.Printf("%f micros/op\n", d.Seconds() * 1e6 / num)
+    fmt.Printf("%f micros/op\n", d.Seconds() * 1e6 / float64(num))
 }
 
 func main() {
@@ -70,14 +71,14 @@ func main() {
 
     op := bitcask.NewOptions()
     var err error
-    bc, err = bitcask.Open(dbPath, op)
+    bc, err = bitcask.Open(dbPath, *op)
     if err != nil {
         log.Fatal(err)
         return
     }
     defer bc.Close()
 
-    rand.Seek(time.Now().UnixNano())
+    rand.Seed(time.Now().UnixNano())
     BenchRandomSet(num)
     BenchRandomGet(num)
 }

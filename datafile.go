@@ -2,7 +2,7 @@ package bitcask
 
 import (
     "log"
-    "io"
+    "os"
 )
 
 type DataIter struct {
@@ -23,7 +23,7 @@ func NewDataIter(f *RandomAccessFile) (*DataIter, error) {
 }
 
 func (it *DataIter) Reset() {
-    err := it.f.Seek(0, io.SeekStart)
+    err := it.f.Seek(0, os.SEEK_SET)
     if err != nil {
         log.Fatal(err)
     }
@@ -32,7 +32,7 @@ func (it *DataIter) Reset() {
 
     rec, err := ParseRecordAt(it.f, it.offset)
     if err != nil {
-        valid = false
+        it.valid = false
         return
     }
     it.rec = rec
@@ -47,10 +47,10 @@ func (it *DataIter) Next() {
     if !it.valid {
         return
     }
-    rec.offset += it.rec.Size()
+    it.offset += it.rec.Size()
     rec, err := ParseRecordAt(it.f, it.offset)
     if err != nil {
-        valid = false
+        it.valid = false
         return
     }
     it.rec = rec

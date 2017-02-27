@@ -4,8 +4,8 @@ import (
     "fmt"
     "sync"
     "io/ioutil"
-    "path/filepath"
-    "strings"
+    "log"
+    "time"
 )
 
 var (
@@ -16,7 +16,7 @@ var (
 type BitCask struct {
     dir         string
     keyDir      *KeyDir
-    activeFile  *DataFile
+    activeFile  *ActiveFile
     mu          *sync.RWMutex
 }
 
@@ -59,13 +59,13 @@ func (bc *BitCask) Restore() error {
         for iter.Reset(); iter.Valid(); iter.Next() {
             rec := iter.rec
             curDirItem := &DirItem {
-                fileId: rec.f.id,
+                fileId: iter.f.id,
                 valueSize: rec.valueSize,
                 valuePos: iter.offset,
                 timeStamp: rec.timeStamp,
             }
             di, err := bc.keyDir.Get(string(rec.key))
-            if (err == nil && rec.f.id > di.fileId) || err == ErrNotFound {
+            if (err == nil && iter.f.id > di.fileId) || err == ErrNotFound {
                 // we are newer, update keyDir
                 err := bc.keyDir.Put(string(rec.key), curDirItem)
                 if err != nil {
@@ -76,9 +76,10 @@ func (bc *BitCask) Restore() error {
         }
 
         if bc.activeFile == nil || bc.activeFile.id < raf.id {
-            bc.activeFile = ActiveFile{raf}
+            bc.activeFile = &ActiveFile{raf}
         }
     }
+    return nil
 }
 
 func (bc *BitCask) Get(key string) ([]byte, error) {
@@ -114,11 +115,11 @@ func (bc *BitCask) Set(key string, val []byte) error {
 
     rec := &Record {
         crc32: 0,
-        timeStamp: time.Now().Unix(),
-        keySize: len(key),
-        valueSize: len(val),
-        key: make([]byte, keySize),
-        value: make([]byte, valueSize),
+        timeStamp: uint32(time.Now().Unix()),
+        keySize: int64(len(key)),
+        valueSize: int64(len(val)),
+        key: make([]byte, len(key)),
+        value: make([]byte, len(val)),
     }
     copy(rec.key, []byte(key))
     copy(rec.value, val)
@@ -131,11 +132,11 @@ func (bc *BitCask) Set(key string, val []byte) error {
 
     di := &DirItem {
         fileId: bc.activeFile.id,
-        valueSize: len(val),
+        valueSize: int64(len(val)),
         valuePos: offset,
         timeStamp: rec.timeStamp,
     }
-    err := bc.keyDir.Put(key, di)
+    err = bc.keyDir.Put(key, di)
     if err != nil {
         log.Fatal(err)
         return err
@@ -150,21 +151,20 @@ func (bc *BitCask) Del(key string) error {
 
     rec := &Record {
         crc32: 0,
-        timeStamp: time.Now().Unix(),
-        keySize: len(key),
+        timeStamp: uint32(time.Now().Unix()),
+        keySize: int64(len(key)),
         valueSize: -1,
-        key: make([]byte, keySize),
+        key: make([]byte, len(key)),
         value: nil,
     }
     copy(rec.key, []byte(key))
-    offset := bc.activeFile.Offset()
     err := bc.activeFile.AddRecord(rec)
     if err != nil {
         log.Fatal(err)
         return err
     }
 
-    err := bc.keyDir.Del(key)
+    err = bc.keyDir.Del(key)
     if err != nil {
         log.Fatal(err)
         return err
@@ -176,9 +176,9 @@ func (bc *BitCask) ListKeys() ([]string, error) {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
-    var keySet = make([]string)
-    for k, v := range bc.keyDir.mp {
-        keySet = append(k)
+    var keySet = make([]string, 0)
+    for k, _ := range bc.keyDir.mp {
+        keySet = append(keySet, k)
     }
     return keySet, nil
 }

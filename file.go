@@ -3,6 +3,9 @@ package bitcask
 import (
     "os"
     "log"
+    "strings"
+    "path/filepath"
+    "strconv"
 )
 
 type RandomAccessFile struct {
@@ -12,7 +15,7 @@ type RandomAccessFile struct {
     offset  int64
 }
 
-func NewRandomAccessFile(name string, bool create) (*RandomAccessFile, error) {
+func NewRandomAccessFile(name string, create bool) (*RandomAccessFile, error) {
     flags := os.O_RDWR
     if create {
         flags |= os.O_CREATE

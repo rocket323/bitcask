@@ -24,6 +24,10 @@ func (r *Record) Size() int64 {
     return RECORD_HEADER_SIZE + r.keySize + r.valueSize
 }
 
+func (r *Record) ValueFieldOffset() int64 {
+    return RECORD_HEADER_SIZE + r.keySize
+}
+
 func (r *Record) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
     var data = []interface{} {
@@ -75,6 +79,54 @@ func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
     }
 
     return rec, nil
+}
+
+type RecordIter struct {
+    f           *RandomAccessFile
+    valid       bool
+    curPos      int64
+    curRec      *Record
+}
+
+func NewRecordIter(f *RandomAccessFile) *RecordIter {
+    iter := &RecordIter {
+        f: f,
+        valid: false,
+        curPos: 0,
+        curRec: nil,
+    }
+    return iter
+}
+
+func (it *RecordIter) Reset() {
+    err := it.f.Seek(0)
+    if err != nil {
+        return
+    }
+    it.curPos = 0
+    it.valid = true
+    it.curRec, err = ParseRecordAt(it.f, it.curPos)
+    if err != nil {
+        it.valid = false
+        return
+    }
+}
+
+func (it *RecordIter) Valid() bool {
+    return it.valid
+}
+
+func (it *RecordIter) Next() {
+    if !it.valid || it.curRec == nil {
+        return
+    }
+    it.curPos += it.curRec.Size()
+    var err error
+    it.curRec, err = ParseRecordAt(it.f, it.curPos)
+    if err != nil {
+        it.valid = false
+        return
+    }
 }
 
 

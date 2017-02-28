@@ -6,8 +6,6 @@ import (
     "io/ioutil"
     "log"
     "time"
-    "strings"
-    "path/filepath"
 )
 
 var (
@@ -24,7 +22,6 @@ type BitCask struct {
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
-
     bc := &BitCask {
         dir: dir,
         keyDir: NewKeyDir(),
@@ -41,7 +38,6 @@ func Open(dir string, opts *Options) (*BitCask, error) {
 }
 
 func (bc *BitCask) Restore() error {
-    // scan directory, build the keyDir
     files, err := ioutil.ReadDir(bc.dir)
     if err != nil {
         log.Println(err)
@@ -50,30 +46,29 @@ func (bc *BitCask) Restore() error {
 
     lastId := int64(-1)
     for _, file := range files {
-        log.Printf("processing file[%s], size[%d]\n", file.Name(), file.Size())
-        base := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-        id, err := GetFileId(base)
+        id, err := GetIdFromName(file.Name())
         if err != nil {
             log.Printf("invalid dataFile name[%s], skip\n", file.Name())
             continue
         }
-        raf, err := NewRandomAccessFile(bc.dir, id, false)
+
+        raf, err := NewRandomAccessFile(bc.GetDataFileName(id), id, false)
         if err != nil {
             log.Println(err)
             return err
         }
 
-        iter, err := NewDataIter(raf)
+        iter := NewRecordIter(raf)
         if err != nil {
             log.Println(err)
             return err
         }
         for iter.Reset(); iter.Valid(); iter.Next() {
-            rec := iter.rec
+            rec := iter.curRec
             curDirItem := &DirItem {
                 fileId: iter.f.id,
                 valueSize: rec.valueSize,
-                valuePos: iter.offset + RECORD_HEADER_SIZE + rec.keySize,
+                valuePos: iter.curPos + rec.ValueFieldOffset(),
                 timeStamp: rec.timeStamp,
             }
             di, err := bc.keyDir.Get(string(rec.key))
@@ -94,7 +89,7 @@ func (bc *BitCask) Restore() error {
     log.Printf("restore db[%s] succ, lastId[%d]\n", bc.dir, lastId)
 
     if lastId == -1 {
-        raf, err := NewRandomAccessFile(bc.dir, 0, true)
+        raf, err := NewRandomAccessFile(bc.GetDataFileName(0), 0, true)
         if err != nil {
             log.Println(err)
             return err
@@ -114,7 +109,7 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
         return nil, err
     }
 
-    raf, err := NewRandomAccessFile(bc.dir, di.fileId, false)
+    raf, err := NewRandomAccessFile(bc.GetDataFileName(di.fileId), di.fileId, false)
     if err != nil {
         log.Println(err)
         return nil, err
@@ -170,7 +165,7 @@ func (bc *BitCask) Set(key string, val []byte) error {
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
         nextFileId := bc.activeFile.id + 1
         bc.activeFile.Close()
-        raf, err := NewRandomAccessFile(bc.dir, nextFileId, true)
+        raf, err := NewRandomAccessFile(bc.GetDataFileName(nextFileId), nextFileId, true)
         if err != nil {
             log.Println(err)
             return err
@@ -200,18 +195,16 @@ func (bc *BitCask) Del(key string) error {
         return err
     }
 
-    // update keyDir
     err = bc.keyDir.Del(key)
     if err != nil {
         log.Println(err)
         return err
     }
 
-    // new active file
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
         nextFileId := bc.activeFile.id + 1
         bc.activeFile.Close()
-        raf, err := NewRandomAccessFile(bc.dir, nextFileId, true)
+        raf, err := NewRandomAccessFile(bc.GetDataFileName(nextFileId), nextFileId, true)
         if err != nil {
             log.Println(err)
             return err
@@ -242,5 +235,7 @@ func (bc *BitCask) Merge() error {
     return nil
 }
 
-
+func (bc *BitCask) GetDataFileName(id int64) string {
+    return bc.dir + "/" + GetBaseFromId(id) + ".data"
+}
 

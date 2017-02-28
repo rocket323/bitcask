@@ -6,7 +6,7 @@ import (
     "math/rand"
     "time"
     "log"
-    "bitcask"
+    "github.com/rocket323/bitcask"
 )
 
 var (

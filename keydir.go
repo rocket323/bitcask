@@ -1,8 +1,5 @@
 package bitcask
 
-import (
-)
-
 type DirItem struct {
     fileId      int64
     valueSize   int64

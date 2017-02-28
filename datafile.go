@@ -2,7 +2,8 @@ package bitcask
 
 import (
     "log"
-    "os"
+    "fmt"
+    "strconv"
 )
 
 type DataIter struct {
@@ -23,7 +24,7 @@ func NewDataIter(f *RandomAccessFile) (*DataIter, error) {
 }
 
 func (it *DataIter) Reset() {
-    err := it.f.Seek(0, os.SEEK_SET)
+    err := it.f.Seek(0)
     if err != nil {
         log.Fatal(err)
     }
@@ -55,4 +56,21 @@ func (it *DataIter) Next() {
     }
     it.rec = rec
 }
+
+func GetFileId(name string) (int64, error) {
+    id, err := strconv.ParseInt(name, 10, 64)
+    if err != nil {
+        return -1, err
+    }
+    return id, nil
+}
+
+func GetFileBaseName(id int64) string {
+    if id < 0 {
+        log.Fatalf("fileId[%d] < 0", id)
+        return "invalid"
+    }
+    return fmt.Sprintf("%09d", id)
+}
+
 

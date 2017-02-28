@@ -3,42 +3,33 @@ package bitcask
 import (
     "os"
     "log"
-    "strings"
-    "path/filepath"
-    "strconv"
 )
 
 type RandomAccessFile struct {
     f       *os.File
     size    int64
     id      int64
-    offset  int64
 }
 
-func NewRandomAccessFile(name string, create bool) (*RandomAccessFile, error) {
+func NewRandomAccessFile(dir string, id int64, create bool) (*RandomAccessFile, error) {
     flags := os.O_RDWR
     if create {
         flags |= os.O_CREATE
     }
+    name := dir + "/" + GetFileBaseName(id) + ".data"
+
     f, err := os.OpenFile(name, flags, 0644)
     if err != nil {
         log.Fatal(err)
         return nil, err
     }
-
     fi, err := f.Stat()
     if err != nil {
         log.Fatal(err)
         return nil, err
     }
 
-    base := strings.TrimSuffix(name, filepath.Ext(name))
-    id, err := strconv.ParseInt(base, 10, 64)
-    if err != nil {
-        log.Fatal(err)
-        return nil, err
-    }
-
+    f.Seek(0, os.SEEK_SET)
     raf := &RandomAccessFile {
         f: f,
         size: fi.Size(),
@@ -47,9 +38,12 @@ func NewRandomAccessFile(name string, create bool) (*RandomAccessFile, error) {
     return raf, nil
 }
 
-func (raf *RandomAccessFile) Seek(offset int64, whence int) error {
-    _, err := raf.f.Seek(offset, whence)
-    return err
+func (raf *RandomAccessFile) Seek(offset int64) error {
+    _, err := raf.f.Seek(offset, os.SEEK_SET)
+    if err != nil {
+        return err
+    }
+    return nil
 }
 
 func (raf *RandomAccessFile) ReadAt(offset int64, len int64) ([]byte, error) {
@@ -89,10 +83,6 @@ func (raf *RandomAccessFile) Append(p []byte) error {
 
 func (raf *RandomAccessFile) Size() int64 {
     return raf.size
-}
-
-func (raf *RandomAccessFile) Offset() int64 {
-    return raf.offset
 }
 
 func (raf *RandomAccessFile) Close() error {

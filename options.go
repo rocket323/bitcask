@@ -6,7 +6,7 @@ type Options struct {
 
 func NewOptions() *Options {
     op := &Options {
-        maxFileSize: 200 * 1024 * 1024,
+        maxFileSize: 10 * 1024 * 1024,
     }
     return op
 }

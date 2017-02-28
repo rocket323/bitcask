@@ -26,11 +26,10 @@ func NewDataIter(f *RandomAccessFile) (*DataIter, error) {
 func (it *DataIter) Reset() {
     err := it.f.Seek(0)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
     }
 
     it.offset = 0
-
     rec, err := ParseRecordAt(it.f, it.offset)
     if err != nil {
         it.valid = false
@@ -67,7 +66,7 @@ func GetFileId(name string) (int64, error) {
 
 func GetFileBaseName(id int64) string {
     if id < 0 {
-        log.Fatalf("fileId[%d] < 0", id)
+        log.Println("fileId[%d] < 0", id)
         return "invalid"
     }
     return fmt.Sprintf("%09d", id)

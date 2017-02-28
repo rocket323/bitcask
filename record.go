@@ -4,6 +4,7 @@ import (
     "log"
     "bytes"
     "encoding/binary"
+    "io"
 )
 
 type Record struct {
@@ -16,7 +17,7 @@ type Record struct {
 }
 
 const (
-    RECORD_HEADER_SIZE = 192
+    RECORD_HEADER_SIZE = 24
 )
 
 func (r *Record) Size() int64 {
@@ -36,7 +37,7 @@ func (r *Record) Encode() ([]byte, error) {
     for _, v := range data {
         err := binary.Write(buf, binary.LittleEndian, v)
         if err != nil {
-            log.Fatal(err)
+            log.Println(err)
             return nil, err
         }
     }
@@ -46,7 +47,9 @@ func (r *Record) Encode() ([]byte, error) {
 func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
     header, err := raf.ReadAt(offset, RECORD_HEADER_SIZE)
     if err != nil {
-        log.Fatal(err)
+        if err != io.EOF {
+            log.Println(err)
+        }
         return nil, err
     }
 
@@ -54,20 +57,20 @@ func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
         crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
         timeStamp:      uint32(binary.LittleEndian.Uint32(header[4:8])),
         keySize:        int64(binary.LittleEndian.Uint64(header[8:16])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[12:18])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[16:24])),
     }
 
     offset += RECORD_HEADER_SIZE
     rec.key, err = raf.ReadAt(offset, rec.keySize)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return nil, err
     }
 
     offset += rec.keySize
     rec.value, err = raf.ReadAt(offset, rec.valueSize)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return nil, err
     }
 

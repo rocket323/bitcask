@@ -11,13 +11,13 @@ type ActiveFile struct {
 func (af *ActiveFile) AddRecord(rec *Record) error {
     buf, err := rec.Encode()
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return err
     }
 
     err = af.Append(buf)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return err
     }
     return nil

@@ -3,6 +3,7 @@ package bitcask
 import (
     "os"
     "log"
+    "io"
 )
 
 type RandomAccessFile struct {
@@ -20,12 +21,12 @@ func NewRandomAccessFile(dir string, id int64, create bool) (*RandomAccessFile, 
 
     f, err := os.OpenFile(name, flags, 0644)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return nil, err
     }
     fi, err := f.Stat()
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return nil, err
     }
 
@@ -50,7 +51,9 @@ func (raf *RandomAccessFile) ReadAt(offset int64, len int64) ([]byte, error) {
     p := make([]byte, len)
     _, err := raf.f.ReadAt(p, offset)
     if err != nil {
-        log.Fatal(err)
+        if err != io.EOF {
+            log.Println(err)
+        }
         return nil, err
     }
     return p, nil
@@ -59,12 +62,12 @@ func (raf *RandomAccessFile) ReadAt(offset int64, len int64) ([]byte, error) {
 func (raf *RandomAccessFile) WriteAt(offset int64, p []byte) error {
     _, err := raf.f.WriteAt(p, offset)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return err
     }
     fi, err := raf.f.Stat()
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return err
     }
     raf.size = fi.Size()
@@ -72,9 +75,10 @@ func (raf *RandomAccessFile) WriteAt(offset int64, p []byte) error {
 }
 
 func (raf *RandomAccessFile) Append(p []byte) error {
+    _, err := raf.f.Seek(0, os.SEEK_END)
     n, err := raf.f.Write(p)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return err
     }
     raf.size += int64(n)

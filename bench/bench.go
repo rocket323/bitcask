@@ -26,16 +26,16 @@ func BenchRandomSet(num int) {
     start := time.Now()
     value := make([]byte, valueSize)
     for i := 0; i < num; i++ {
-        key := fmt.Sprintf("%9d", rand.Int() % num)
+        key := fmt.Sprintf("%09d", rand.Int() % num)
         err := bc.Set(key, value)
         if err != nil {
-            log.Fatal(err)
+            log.Println(err)
             panic(err)
         }
     }
     end := time.Now()
     d := end.Sub(start)
-    fmt.Printf("set finish in %.2f seconds\n", d.Seconds())
+    fmt.Printf("========\nset finish in %.2f seconds\n", d.Seconds())
     fmt.Printf("%.2f qps\n", float64(num) / d.Seconds())
     writeMB := float64(num * valueSize) / 1e6
     fmt.Printf("%.2f MB/s\n", writeMB / d.Seconds())
@@ -46,11 +46,10 @@ func BenchRandomGet(num int) {
     start := time.Now()
     var found = 0
     for i := 0; i < num; i++ {
-        key := fmt.Sprintf("%9d", rand.Int() % num)
+        key := fmt.Sprintf("%09d", rand.Int() % num)
         _, err := bc.Get(key)
-        log.Printf("get key[%s]\n", key)
         if err != nil && err != bitcask.ErrNotFound {
-            log.Fatal(err)
+            log.Println(err)
             panic(err)
         }
         if err == nil {
@@ -59,7 +58,7 @@ func BenchRandomGet(num int) {
     }
     end := time.Now()
     d := end.Sub(start)
-    fmt.Printf("get finish in %.2f seconds\n", d.Seconds())
+    fmt.Printf("========\nget finish in %.2f seconds\n", d.Seconds())
     fmt.Printf("found %d out of %d\n", found, num)
     fmt.Printf("%.2f qps\n", float64(num) / d.Seconds())
     writeMB := float64(num * valueSize) / 1e6
@@ -75,7 +74,7 @@ func main() {
     var err error
     bc, err = bitcask.Open(dbPath, op)
     if err != nil {
-        log.Fatal(err)
+        log.Println(err)
         return
     }
     defer bc.Close()

@@ -215,6 +215,9 @@ func (bc *BitCask) Del(key string) error {
     return nil
 }
 
+func DestroyDatabase(path string) error {
+}
+
 func (bc *BitCask) ListKeys() ([]string, error) {
     bc.mu.Lock()
     defer bc.mu.Unlock()

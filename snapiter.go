@@ -6,7 +6,7 @@ type SnapshotIter struct {
     valid       bool
 }
 
-func (sp *Snapshot) NewSnapIter() *SnapshotIter {
+func (sp *Snapshot) NewSnapshotIter() *SnapshotIter {
     spIter := &SnapshotIter {
         snap: sp,
         recIter: nil,
@@ -19,21 +19,22 @@ func (it *SnapshotIter) SeekToFirst() error {
     sp := it.snap
     firstId := sp.bc.FirstFileId()
     if firstId == -1 {
-        valid = false
+        it.valid = false
         return ErrNotFound
     }
-    raf, err := sp.bc.NewDataFileFromId(firstId)
+    raf, err := sp.bc.NewDataFileFromId(firstId, false)
     if err != nil {
-        valid = false
+        it.valid = false
         return ErrNotFound
     }
 
     it.recIter = NewRecordIter(raf)
     it.recIter.Reset()
+    return nil
 }
 
 func (it *SnapshotIter) Valid() bool {
-    validCheck := valid
+    validCheck := it.valid
     if !it.recIter.Valid() {
         validCheck = false
     }
@@ -63,12 +64,12 @@ func (it *SnapshotIter) Next() {
         it.recIter.Close()
         nextFileId := it.snap.bc.NextFileId(it.recIter.f.id)
         if nextFileId == -1 {
-            valid = false
+            it.valid = false
             return
         }
-        raf, err := it.snap.bc.NewDataFileFromId(nextFileId)
+        raf, err := it.snap.bc.NewDataFileFromId(nextFileId, false)
         if err != nil {
-            valid = false
+            it.valid = false
             return
         }
         it.recIter = NewRecordIter(raf)

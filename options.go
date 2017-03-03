@@ -17,6 +17,6 @@ func (o *Options) SetMaxFileSize(n int64) {
 }
 
 func (o *Options) SetMaxOpenFiles(n int32) {
-    o.maxOpenFiles = n
+    o.maxOpenFiles = uint32(n)
 }
 

@@ -6,7 +6,7 @@ import (
     "io/ioutil"
     "log"
     "time"
-    "container/list"
+    "os"
 )
 
 var (
@@ -32,7 +32,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         mu: &sync.RWMutex{},
         opts: opts,
         version: 0,
-        snaps: list.New(),
+        snaps: make(map[uint64]*Snapshot),
     }
     err := bc.Restore()
     if err != nil {
@@ -224,9 +224,6 @@ func (bc *BitCask) Del(key string) error {
     return nil
 }
 
-func DestroyDatabase(path string) error {
-}
-
 func (bc *BitCask) ListKeys() ([]string, error) {
     bc.mu.Lock()
     defer bc.mu.Unlock()
@@ -260,7 +257,7 @@ func (bc *BitCask) FirstFileId() int64 {
     files, err := ioutil.ReadDir(bc.dir)
     if err != nil {
         log.Println(err)
-        return err
+        return -1
     }
 
     minId := int64(-1)
@@ -271,10 +268,10 @@ func (bc *BitCask) FirstFileId() int64 {
             continue
         }
         if minId == -1 || id < minId {
-            lastId = id
+            minId = id
         }
     }
-    return lastId
+    return minId
 }
 
 func (bc *BitCask) NextFileId(id int64) int64 {
@@ -291,5 +288,9 @@ func (bc *BitCask) NextFileId(id int64) int64 {
         break
     }
     return id
+}
+
+func DestroyDatabase(path string) error {
+    return nil
 }
 

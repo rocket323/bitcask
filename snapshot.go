@@ -2,6 +2,7 @@ package bitcask
 
 import (
     "log"
+    "container/list"
 )
 
 type Snapshot struct {
@@ -22,12 +23,12 @@ func (bc *BitCask) NewSnapshot() *Snapshot {
         activeFileId: bc.activeFile.id,
         lastActiveSize: bc.activeFile.Size(),
     }
-    bc.snaps.PushBack(snap)
+    bc.snaps[snap.snapId] = snap
     bc.version++
     return snap
 }
 
-func (bc *BitCask) releaseSnapshot(snap *Snapshot) {
+func (bc *BitCask) ReleaseSnapshot(snap *Snapshot) {
     if snap == nil {
         log.Fatal("snap is nil")
         return

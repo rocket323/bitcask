@@ -114,7 +114,7 @@ func (it *RecordIter) Reset() {
 
 func (it *RecordIter) Close() {
     it.valid = false
-    close(it.f)
+    it.f.Close()
 }
 
 func (it *RecordIter) Valid() bool {

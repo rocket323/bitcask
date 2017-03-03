@@ -17,6 +17,7 @@ func (sp *Snapshot) NewSnapshotIter() *SnapshotIter {
 
 func (it *SnapshotIter) SeekToFirst() error {
     sp := it.snap
+    it.valid = true
     firstId := sp.bc.FirstFileId()
     if firstId == -1 {
         it.valid = false
@@ -34,6 +35,7 @@ func (it *SnapshotIter) SeekToFirst() error {
 }
 
 func (it *SnapshotIter) Valid() bool {
+    // valid check
     validCheck := it.valid
     if !it.recIter.Valid() {
         validCheck = false

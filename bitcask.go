@@ -7,6 +7,7 @@ import (
     "log"
     "time"
     "os"
+    "path/filepath"
 )
 
 var (
@@ -114,7 +115,7 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
         return nil, err
     }
 
-    raf, err := NewRandomAccessFile(bc.GetDataFileName(di.fileId), di.fileId, false)
+    raf, err := bc.NewDataFileFromId(di.fileId, false)
     if err != nil {
         log.Println(err)
         return nil, err
@@ -290,7 +291,26 @@ func (bc *BitCask) NextFileId(id int64) int64 {
     return id
 }
 
-func DestroyDatabase(path string) error {
+func DestroyDatabase(dir string) error {
+    log.Println("clearing db[%s]...", dir)
+
+    d, err := os.Open(dir)
+    if err != nil {
+        return err
+    }
+    defer d.Close()
+    names, err := d.Readdirnames(-1)
+    if err != nil {
+        return err
+    }
+    for _, name := range names {
+        err = os.RemoveAll(filepath.Join(dir, name))
+        if err != nil {
+            return err
+        }
+    }
+
+    log.Println("clear db[%s] succ!", dir)
     return nil
 }
 

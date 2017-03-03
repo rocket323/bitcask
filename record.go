@@ -83,17 +83,17 @@ func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
 
 type RecordIter struct {
     f           *RandomAccessFile
-    valid       bool
     curPos      int64
     curRec      *Record
+    valid       bool
 }
 
 func NewRecordIter(f *RandomAccessFile) *RecordIter {
     iter := &RecordIter {
         f: f,
-        valid: false,
         curPos: 0,
         curRec: nil,
+        valid: false,
     }
     return iter
 }

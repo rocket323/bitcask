@@ -6,6 +6,7 @@ import (
     "io/ioutil"
     "log"
     "time"
+    "container/list"
 )
 
 var (
@@ -14,11 +15,13 @@ var (
 )
 
 type BitCask struct {
+    mu          *sync.RWMutex
     dir         string
     keyDir      *KeyDir
     activeFile  *ActiveFile
-    mu          *sync.RWMutex
     opts        *Options
+    version     uint64
+    snaps       map[uint64]*Snapshot
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
@@ -28,6 +31,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         activeFile: nil,
         mu: &sync.RWMutex{},
         opts: opts,
+        snaps: list.New(),
     }
     err := bc.Restore()
     if err != nil {
@@ -240,5 +244,47 @@ func (bc *BitCask) Merge() error {
 
 func (bc *BitCask) GetDataFileName(id int64) string {
     return bc.dir + "/" + GetBaseFromId(id) + ".data"
+}
+
+func (bc *BitCask) NewDataFileFromId(id int64, create bool) (*RandomAccessFile, error) {
+    name := bc.GetDataFileName(id)
+    return NewRandomAccessFile(name, id, create)
+}
+
+func (bc *BitCask) FirstFileId() int64 {
+    files, err := ioutil.ReadDir(bc.dir)
+    if err != nil {
+        log.Println(err)
+        return err
+    }
+
+    minId := int64(-1)
+    for _, file := range files {
+        id, err := GetIdFromName(file.Name())
+        if err != nil {
+            log.Printf("invalid dataFile name[%s], skip\n", file.Name())
+            continue
+        }
+        if minId == -1 || id < minId {
+            lastId = id
+        }
+    }
+    return lastId
+}
+
+func (bc *BitCask) NextFileId(id int64) int64 {
+    for {
+        id++
+        if id > bc.activeFile.id {
+            id = -1
+            break
+        }
+        name := bc.GetDataFileName(id)
+        if _, err := os.Stat(name); os.IsNotExist(err) {
+            continue
+        }
+        break
+    }
+    return id
 }
 

@@ -112,6 +112,10 @@ func (it *RecordIter) Reset() {
     }
 }
 
+func (it *RecordIter) Close() {
+    close(it.f)
+}
+
 func (it *RecordIter) Valid() bool {
     return it.valid
 }
@@ -129,4 +133,11 @@ func (it *RecordIter) Next() {
     }
 }
 
+func (it *RecordIter) Key() []byte {
+    return it.curRec.key
+}
+
+func (it *RecordIter) Value() []byte {
+    return it.curRec.value
+}
 

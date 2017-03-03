@@ -42,6 +42,9 @@ func (it *SnapshotIter) Valid() bool {
     }
 
     // active offset check
+    if it.recIter.f.id > it.snap.activeFileId {
+        return false
+    }
     if it.recIter.f.id == it.snap.activeFileId {
         if it.recIter.curPos >= it.snap.lastActiveSize {
             return false

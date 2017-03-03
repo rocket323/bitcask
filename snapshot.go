@@ -23,6 +23,7 @@ func (bc *BitCask) NewSnapshot() *Snapshot {
         lastActiveSize: bc.activeFile.Size(),
     }
     bc.snaps.PushBack(snap)
+    bc.version++
     return snap
 }
 

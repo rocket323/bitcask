@@ -31,6 +31,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         activeFile: nil,
         mu: &sync.RWMutex{},
         opts: opts,
+        version: 0,
         snaps: list.New(),
     }
     err := bc.Restore()
@@ -133,6 +134,8 @@ func (bc *BitCask) Set(key string, val []byte) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
+    bc.version++
+
     keySize := len(key)
     valueSize := len(val)
     rec := &Record {
@@ -183,6 +186,8 @@ func (bc *BitCask) Set(key string, val []byte) error {
 func (bc *BitCask) Del(key string) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
+
+    bc.version++
 
     rec := &Record {
         crc32: 0,

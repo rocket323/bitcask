@@ -22,6 +22,7 @@ func (bc *BitCask) NewSnapshot() *Snapshot {
         snapId: bc.version,
         activeFileId: bc.activeFile.id,
         lastActiveSize: bc.activeFile.Size(),
+        iters: list.New(),
     }
     bc.snaps[snap.snapId] = snap
     bc.version++

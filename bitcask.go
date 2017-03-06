@@ -78,13 +78,14 @@ func (bc *BitCask) Restore() error {
                 timeStamp: rec.timeStamp,
             }
             di, err := bc.keyDir.Get(string(rec.key))
-            if (err == nil && iter.f.id > di.fileId) || err == ErrNotFound {
+            if (err == nil && iter.f.id >= di.fileId) || err == ErrNotFound {
                 err := bc.keyDir.Put(string(rec.key), curDirItem)
                 if err != nil {
                     log.Println(err)
                     return err
                 }
             }
+            // log.Printf("restore key[%s]", string(rec.key))
         }
 
         if raf.id > lastId {

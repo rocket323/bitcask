@@ -13,6 +13,7 @@ import (
 var (
     ErrNotFound = fmt.Errorf("not found")
     ErrNotCompl = fmt.Errorf("record not completed")
+    ErrInvalid = fmt.Errorf("invalid")
 )
 
 type BitCask struct {

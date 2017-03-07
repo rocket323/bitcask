@@ -41,20 +41,7 @@ func (raf *RandomAccessFile) ReadAt(offset int64, len int64) ([]byte, error) {
     return p, err
 }
 
-func (raf *RandomAccessFile) WriteAt(offset int64, p []byte) error {
-    _, err := raf.f.WriteAt(p, offset)
-    if err != nil {
-        return err
-    }
-    fi, err := raf.f.Stat()
-    if err != nil {
-        return err
-    }
-    raf.size = fi.Size()
-    return nil
-}
-
-func (raf *RandomAccessFile) Append(p []byte) error {
+func (raf *RandomAccessFile) Write(p []byte) error {
     _, err := raf.f.Seek(0, os.SEEK_END)
     n, err := raf.f.Write(p)
     if err != nil {

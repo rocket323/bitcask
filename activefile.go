@@ -15,7 +15,7 @@ func (af *ActiveFile) AddRecord(rec *Record) error {
         return err
     }
 
-    err = af.Append(buf)
+    err = af.Write(buf)
     if err != nil {
         log.Println(err)
         return err

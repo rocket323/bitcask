@@ -11,19 +11,19 @@ type FileReader interface {
 }
 
 type FileWithBuffer struct {
-    name        string
+    path        string
     f           *os.File
     size        int64
     wbuf        []byte
     n           int64
 }
 
-func NewFileWithBuffer(name string, create bool, wbufSize int64) (*FileWithBuffer, error) {
+func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffer, error) {
     flags := os.O_RDWR
     if create {
         flags |= os.O_CREATE
     }
-    f, err := os.OpenFile(name, flags, 0644)
+    f, err := os.OpenFile(path, flags, 0644)
     if err != nil {
         return nil, err
     }
@@ -32,7 +32,7 @@ func NewFileWithBuffer(name string, create bool, wbufSize int64) (*FileWithBuffe
         return nil, err
     }
     fb := &FileWithBuffer{
-        name: name,
+        path: path,
         f: f,
         size: fi.Size(),
         wbuf: make([]byte, wbufSize),

@@ -5,7 +5,21 @@ import (
 )
 
 type ActiveFile struct {
-    *RandomAccessFile
+    *FileWithBuffer
+    id  int64
+}
+
+func NewActiveFile(path string, id int64, wbufSize int64) (*ActiveFile, error) {
+    f, err := NewFileWithBuffer(path, true, wbufSize)
+    if err != nil {
+        return nil, err
+    }
+
+    af := &ActiveFile{
+        FileWithBuffer: f,
+        id: id,
+    }
+    return af
 }
 
 func (af *ActiveFile) AddRecord(rec *Record) error {

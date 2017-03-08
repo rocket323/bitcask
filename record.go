@@ -48,8 +48,8 @@ func (r *Record) Encode() ([]byte, error) {
     return buf.Bytes(), nil
 }
 
-func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
-    header, err := raf.ReadAt(offset, RECORD_HEADER_SIZE)
+func ParseRecordAt(f FileReader, offset int64) (*Record, error) {
+    header, err := f.ReadAt(offset, RECORD_HEADER_SIZE)
     if err != nil {
         if err != io.EOF {
             log.Println(err)
@@ -65,14 +65,14 @@ func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
     }
 
     offset += RECORD_HEADER_SIZE
-    rec.key, err = raf.ReadAt(offset, rec.keySize)
+    rec.key, err = f.ReadAt(offset, rec.keySize)
     if err != nil {
         log.Println(err)
         return nil, err
     }
 
     offset += rec.keySize
-    rec.value, err = raf.ReadAt(offset, rec.valueSize)
+    rec.value, err = f.ReadAt(offset, rec.valueSize)
     if err != nil {
         log.Println(err)
         return nil, err
@@ -81,14 +81,16 @@ func ParseRecordAt(raf *RandomAccessFile, offset int64) (*Record, error) {
     return rec, nil
 }
 
+/////////////////////////////////
+
 type RecordIter struct {
-    f           *RandomAccessFile
+    f           FileReader
     curPos      int64
     curRec      *Record
     valid       bool
 }
 
-func NewRecordIter(f *RandomAccessFile) *RecordIter {
+func NewRecordIter(f FileReader) *RecordIter {
     iter := &RecordIter {
         f: f,
         curPos: 0,
@@ -99,10 +101,6 @@ func NewRecordIter(f *RandomAccessFile) *RecordIter {
 }
 
 func (it *RecordIter) Reset() {
-    err := it.f.Seek(0)
-    if err != nil {
-        return
-    }
     it.curPos = 0
     it.valid = true
     it.curRec, err = ParseRecordAt(it.f, it.curPos)
@@ -141,4 +139,36 @@ func (it *RecordIter) Key() []byte {
 func (it *RecordIter) Value() []byte {
     return it.curRec.value
 }
+
+/////////////////////////////////
+type RecordCache struct {
+    cache           *lru.Cache
+    capacity        int64
+}
+
+type RecordKey struct {
+    f       FileReader
+    pos     int64
+}
+
+func NewRecordCache(int capacity) *RecordCache {
+    c := lru.NewCache(capacity, nil)
+    rc := &RecordCache{
+        cache: c,
+        capacity: capacity,
+    }
+    return rc
+}
+
+func (rc *RecordCache) Ref(recKey RecordKey) (*Record, error) {
+}
+
+func (rc *RecordCache) Unref(recKey RecordKey) {
+    return rc.cache.unref(recKey)
+}
+
+func (rc *RecordCache) Close() {
+    return rc.cache.Close()
+}
+
 

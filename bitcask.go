@@ -227,17 +227,6 @@ func (bc *BitCask) Del(key string) error {
     return nil
 }
 
-func (bc *BitCask) ListKeys() ([]string, error) {
-    bc.mu.Lock()
-    defer bc.mu.Unlock()
-
-    var keySet = make([]string, 0)
-    for k, _ := range bc.keyDir.mp {
-        keySet = append(keySet, k)
-    }
-    return keySet, nil
-}
-
 func (bc *BitCask) Close() error {
     bc.activeFile.Close()
     return nil

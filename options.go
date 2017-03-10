@@ -2,6 +2,7 @@ package bitcask
 
 type Options struct {
     maxFileSize         int64
+    cacheSize           int64
     maxOpenFiles        uint32
     bufferSize          int64
 }
@@ -9,6 +10,7 @@ type Options struct {
 func NewOptions() *Options {
     op := &Options {
         maxFileSize: 100 * 1024 * 1024,
+        cacheSize: 100 * 1024 * 1024,
         maxOpenFiles: 4096,
         bufferSize: 10 * 1024 * 1024,
     }
@@ -17,6 +19,10 @@ func NewOptions() *Options {
 
 func (o *Options) SetMaxFileSize(n int64) {
     o.maxFileSize = n
+}
+
+func (o *Options) SetCacheSize(n int64) {
+    o.cacheSize = n
 }
 
 func (o *Options) SetMaxOpenFiles(n int32) {

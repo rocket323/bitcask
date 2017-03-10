@@ -51,6 +51,7 @@ func (c *DataFileCache) Ref(path string, fileId int64) (*DataFile, error) {
     }
     c.cache.Put(fileId, df)
     c.cache.Ref(fileId)
+    return df, nil
 }
 
 func (c *DataFileCache) Unref(fileId int64) error {

@@ -8,6 +8,7 @@ type FileReader interface {
     ReadAt(offset int64, len int64) ([]byte, error)
     Size() int64
     Close() error
+    Path() string
 }
 
 type FileWithBuffer struct {
@@ -119,5 +120,9 @@ func (f *FileWithBuffer) Sync() {
 func (f *FileWithBuffer) Close() error {
     f.Flush()
     return f.f.Close()
+}
+
+func (f *FileWithBuffer) Path() string {
+    return f.path
 }
 

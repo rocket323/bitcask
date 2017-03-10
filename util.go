@@ -20,3 +20,10 @@ func GetBaseFromId(id int64) string {
     return fmt.Sprintf("%09d", id)
 }
 
+func GetIdFromPath(path string) (int64, error) {
+    base := filepath.Base(path)
+    name := strings.TrimSuffix(base, filepath.Ext(name))
+    id, err := strconv.ParseInt(name, 10, 64)
+    return id, err
+}
+

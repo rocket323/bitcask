@@ -24,6 +24,8 @@ type BitCask struct {
     opts        *Options
     version     uint64
     snaps       map[uint64]*Snapshot
+    recCache    *RecordCache
+    dfCache     *DataFileCache
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
@@ -35,7 +37,10 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         opts: opts,
         version: 0,
         snaps: make(map[uint64]*Snapshot),
+        dfCache: NewDataFileCache(opts.maxOpenFiles),
     }
+    bc.recCache = NewRecordCache(opts.cacheSize, bc)
+
     err := bc.Restore()
     if err != nil {
         log.Println(err)

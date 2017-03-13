@@ -69,13 +69,13 @@ func (it *SnapshotIter) SeekToFirst() error {
         it.valid = false
         return ErrNotFound
     }
-    raf, err := sp.bc.NewDataFileFromId(firstId, false)
+    df, err := sp.bc.NewDataFileFromId(firstId)
     if err != nil {
         it.valid = false
         return ErrNotFound
     }
 
-    it.recIter = NewRecordIter(raf)
+    it.recIter = NewRecordIter(df, sp.bc)
     it.recIter.Reset()
     return nil
 }
@@ -91,10 +91,10 @@ func (it *SnapshotIter) Valid() bool {
     }
 
     // active offset check
-    if it.recIter.f.id > it.snap.activeFileId {
+    if it.recIter.df.id > it.snap.activeFileId {
         return false
     }
-    if it.recIter.f.id == it.snap.activeFileId {
+    if it.recIter.df.id == it.snap.activeFileId {
         if it.recIter.curPos >= it.snap.lastActiveSize {
             return false
         }
@@ -110,7 +110,7 @@ func (it *SnapshotIter) Next() {
 
     if !it.recIter.Valid() { // move to next file
         it.recIter.Close()
-        nextFileId := it.snap.bc.NextFileId(it.recIter.f.id)
+        nextFileId := it.snap.bc.NextFileId(it.recIter.df.id)
         if nextFileId == -1 {
             it.valid = false
             return
@@ -120,7 +120,7 @@ func (it *SnapshotIter) Next() {
             it.valid = false
             return
         }
-        it.recIter = NewRecordIter(raf)
+        it.recIter = NewRecordIter(raf, it.snap.bc)
         it.recIter.Reset()
     }
 }

@@ -1,7 +1,7 @@
 package bitcask
 
 import (
-    github.com/rocket323/bitcask/lru
+    "github.com/rocket323/bitcask/lru"
 )
 
 type DataFile struct {
@@ -23,28 +23,31 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
 
 type DataFileCache struct {
     cache       *lru.Cache
-    capacity    int64
+    capacity    int
+    bc          *BitCask
 }
 
-func NewDataFileCache(int capacity) *DataFileCache {
+func NewDataFileCache(capacity int, bc *BitCask) *DataFileCache {
     onEvit := func(k interface{}, v interface{}) {
-        v.(*DataFile).Close()
+        v.(*DataFile).fr.Close()
     }
 
     c := lru.NewCache(capacity, onEvit)
-    dfc: = &DataFileCache{
+    dfc := &DataFileCache{
         cache: c,
         capacity: capacity,
+        bc:bc,
     }
     return dfc
 }
 
-func (c *DataFileCache) Ref(path string, fileId int64) (*DataFile, error) {
+func (c *DataFileCache) Ref(fileId int64) (*DataFile, error) {
     v, err := c.cache.Ref(fileId)
     if err == nil {
         return v.(*DataFile), nil
     }
 
+    path := c.bc.GetDataFilePath(fileId)
     df, err := NewDataFile(path, fileId)
     if err != nil {
         return nil, err
@@ -59,6 +62,6 @@ func (c *DataFileCache) Unref(fileId int64) error {
 }
 
 func (c *DataFileCache) Close() {
-    return c.cache.Close()
+    c.cache.Close()
 }
 

@@ -1,11 +1,12 @@
 package lru
 
 import (
-    container/list
+    "fmt"
+    "container/list"
 )
 
 var(
-    ErrNotInCache = fmt.Errorf("not in cache"),
+    ErrNotInCache = fmt.Errorf("not in cache")
 )
 
 type entry struct {
@@ -23,35 +24,34 @@ type Cache struct {
     onEvit      EvitCallback
 }
 
-func NewCache(int capacity, onEvit EvitCallback) *Cache {
+func NewCache(capacity int, onEvit EvitCallback) *Cache {
     cache := &Cache{
         capacity: capacity,
         l: list.New(),
-        hash, make(map[interface{}]*list.Element),
+        hash: make(map[interface{}]*list.Element),
         onEvit: onEvit,
     }
     return cache
 }
 
 func (c *Cache) Put(key interface{}, value interface{}) {
-    // check for existing item
     if e, ok := c.hash[key]; ok {
         c.l.MoveToFront(e)
         e.Value.(*entry).value = value
         return
     }
 
-    if len(c.hash) > c.capacity {
+    if len(c.hash) >= c.capacity {
         c.Prune(c.capacity - 1, false)
     }
 
-    e := &entry{key, value}
-    c.l.PushFront(e)
-    c.hash[key] = e
+    e := &entry{key, value, 0}
+    ent := c.l.PushFront(e)
+    c.hash[key] = ent
     return
 }
 
-func (c *Cache) Ref(key interface{}) (value interface{}, error) {
+func (c *Cache) Ref(key interface{}) (interface{}, error) {
     if e, ok := c.hash[key]; !ok {
         return nil, ErrNotInCache
     } else {
@@ -71,24 +71,24 @@ func (c *Cache) Unref(key interface{}) error {
 }
 
 func (c *Cache) Size() int {
-    return len(c.mp)
+    return c.l.Len()
 }
 
 func (c *Cache) Close() {
-    Prune(0, true)
+    c.Prune(0, true)
 }
 
 func (c *Cache) Prune(limit int, force bool) {
     removeEntries := make([]*list.Element, 0)
 
-    for e := c.l.Back(); e != nil; e.Prev() {
+    for e := c.l.Back(); e != nil; e = e.Prev() {
         if c.l.Len() - len(removeEntries) <= limit { break }
         ee := e.Value.(*entry)
         if ee.refCount > 0 && !force { continue }
         removeEntries = append(removeEntries, e)
     }
 
-    for _, e = range removeEntries {
+    for _, e := range removeEntries {
         c.l.Remove(e)
         ee := e.Value.(*entry)
         delete(c.hash, ee.key)

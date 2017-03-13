@@ -16,7 +16,7 @@ type FileWithBuffer struct {
     f           *os.File
     size        int64
     wbuf        []byte
-    n           int64
+    n           int
 }
 
 func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffer, error) {
@@ -43,9 +43,9 @@ func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffe
 }
 
 func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
-    fileSize := f.size - f.n
+    fileSize := f.size - int64(f.n)
     remainLen := len
-    data = make([]byte, len)
+    data := make([]byte, len)
     if offset < fileSize {
         var n int64
         if offset + len <= fileSize {
@@ -61,18 +61,18 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
         }
         offset = 0
     }
-    if offset + remainLen > wbufSize {
+    if offset + remainLen > int64(f.n) {
         return nil, ErrInvalid // FIXME
     }
-    n = copy(data[len-remainLen:], f.wbuf)
-    return data[:len-remainLen+n], nil
+    n := copy(data[len-remainLen:], f.wbuf)
+    return data[:len-remainLen+int64(n)], nil
 }
 
-func (f *FileWithBuffer) Write(data []byte) (nn int64, err error) {
-    for len(data) > len(f.wbuf) - f.n && err == nil {
-        var n int64
+func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {
+    for len(data) > len(f.wbuf) - int(f.n) && err == nil {
+        var n int
         if f.n == 0 {
-            n, err := f.f.Write(data)
+            n, err = f.f.Write(data)
         } else {
             n = copy(f.wbuf[f.n:], data)
             f.n += n
@@ -82,13 +82,13 @@ func (f *FileWithBuffer) Write(data []byte) (nn int64, err error) {
         data = data[n:]
     }
     if err != nil {
-        file.size += nn
+        f.size += int64(nn)
         return
     }
     n := copy(f.wbuf[f.n:], data)
-    file.n += n
+    f.n += n
     nn += n
-    file.size += nn
+    f.size += int64(nn)
     return
 }
 
@@ -112,7 +112,7 @@ func (f *FileWithBuffer) Size() int64 {
     return f.size
 }
 
-func (f *FileWithBuffer) Sync() {
+func (f *FileWithBuffer) Sync() error {
     f.Flush()
     return f.f.Sync()
 }

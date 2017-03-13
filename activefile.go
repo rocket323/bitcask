@@ -19,7 +19,7 @@ func NewActiveFile(path string, id int64, wbufSize int64) (*ActiveFile, error) {
         FileWithBuffer: f,
         id: id,
     }
-    return af
+    return af, nil
 }
 
 func (af *ActiveFile) AddRecord(rec *Record) error {
@@ -29,8 +29,9 @@ func (af *ActiveFile) AddRecord(rec *Record) error {
         return err
     }
 
-    err = af.Write(buf)
+    _, err = af.Write(buf)
     if err != nil {
+        // FIXME should undo the writing
         log.Println(err)
         return err
     }

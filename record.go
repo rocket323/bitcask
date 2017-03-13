@@ -5,11 +5,12 @@ import (
     "bytes"
     "encoding/binary"
     "io"
+    "github.com/rocket323/bitcask/lru"
 )
 
 type Record struct {
     crc32       uint32
-    timeStamp   uint32
+    expration   uint32
     keySize     int64
     valueSize   int64
     key         []byte
@@ -84,16 +85,16 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
 /////////////////////////////////
 
 type RecordIter struct {
-    f           FileReader
+    df          *DataFile
     curPos      int64
     curRec      *Record
     valid       bool
-    bt          *BitCask
+    bc          *BitCask
 }
 
-func NewRecordIter(f FileReader, bt *BitCask) *RecordIter {
+func NewRecordIter(df *DataFile, bc *BitCask) *RecordIter {
     iter := &RecordIter {
-        f: f,
+        df: df,
         curPos: 0,
         curRec: nil,
         valid: false,
@@ -105,7 +106,8 @@ func NewRecordIter(f FileReader, bt *BitCask) *RecordIter {
 func (it *RecordIter) Reset() {
     it.curPos = 0
     it.valid = true
-    it.curRec, err = bt.recCache.Ref(it.f, it.curPos)
+    var err error
+    it.curRec, err = it.bc.recCache.Ref(it.df.id, it.curPos)
     if err != nil {
         it.valid = false
         return
@@ -114,7 +116,7 @@ func (it *RecordIter) Reset() {
 
 func (it *RecordIter) Close() {
     it.valid = false
-    it.f.Close()
+    it.df.fr.Close()
 }
 
 func (it *RecordIter) Valid() bool {
@@ -126,8 +128,8 @@ func (it *RecordIter) Next() {
         return
     }
     it.curPos += it.curRec.Size()
-    gar err error
-    it.curRec, err = it.bt.recCache.Ref(it.f, it.curPos)
+    var err error
+    it.curRec, err = it.bc.recCache.Ref(it.df.id, it.curPos)
     if err != nil {
         it.valid = false
         return
@@ -145,16 +147,16 @@ func (it *RecordIter) Value() []byte {
 /////////////////////////////////
 type RecordCache struct {
     cache           *lru.Cache
-    capacity        int64
+    capacity        int
     bc              *BitCask
 }
 
 type RecordKey struct {
-    f       FileReader
+    fileId  int64
     pos     int64
 }
 
-func NewRecordCache(int capacity, bc *BitCask) *RecordCache {
+func NewRecordCache(capacity int, bc *BitCask) *RecordCache {
     c := lru.NewCache(capacity, nil)
     rc := &RecordCache{
         cache: c,
@@ -164,27 +166,21 @@ func NewRecordCache(int capacity, bc *BitCask) *RecordCache {
     return rc
 }
 
-func (rc *RecordCache) Ref(f FileReader, offset int64) (*Record, error) {
-    recKey := RecordKey{f, offset}
+func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
+    recKey := RecordKey{fileId, offset}
     v, err := rc.cache.Ref(recKey)
     if err == nil {
         return v.(*Record), nil
     }
 
     // parse record at data file
-    path := recKey.f.Path()
-    id, err := GetIdFromPath(path)
+    df, err := rc.bc.dfCache.Ref(fileId)
     if err != nil {
         return nil, err
     }
+    defer rc.bc.dfCache.Unref(fileId)
 
-    df, err := rc.bc.dfCache.Ref(path, id)
-    if err != nil {
-        reutrn nil, err
-    }
-    defer rc.bc.dfCache.Unref(id)
-
-    rec, err := parseRecordAt(df, rc.pos)
+    rec, err := parseRecordAt(df.fr, offset)
     if err != nil {
         return nil, err
     }
@@ -194,12 +190,12 @@ func (rc *RecordCache) Ref(f FileReader, offset int64) (*Record, error) {
     return rec, nil
 }
 
-func (rc *RecordCache) Unref(f FileReader, offset int64) {
-    recKey := RecordKey{f, offset}
-    return rc.cache.unref(recKey)
+func (rc *RecordCache) Unref(fileId int64, offset int64) {
+    recKey := RecordKey{fileId, offset}
+    rc.cache.Unref(recKey)
 }
 
 func (rc *RecordCache) Close() {
-    return rc.cache.Close()
+    rc.cache.Close()
 }
 

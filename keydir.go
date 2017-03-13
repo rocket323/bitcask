@@ -5,9 +5,8 @@ import (
 
 type DirItem struct {
     fileId      int64
-    valueSize   int64
-    valuePos    int64
-    timeStamp   uint32
+    recOffset   int64
+    expration   uint32
 }
 
 type KeyDir struct {

@@ -244,17 +244,34 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
     if err != nil {
         return err
     }
+    defer bc.dfCache.Unref(fileId)
 
     begin := time.Now()
     iter := NewRecordIter(df, bc)
     for iter.Reset(); iter.Valid(); iter.Next() {
+        rec := iter.curRec
 
-        err := bc.addRecord(iter.curRec)
-        if err != nil {
-            log.Printf("merge record[%+v] failed, err=%s\n", iter.curRec, err)
-            return err
+        kdItem, err := bc.kd.Get(rec.key)
+        if kdItem != nil && kdItem.fileId == iter.df.id && kdItem.recOffset == iter.curPos {
+            // skip exprired key
+            if kdItem.expration <= begin.Unix() {
+                continue
+            }
+
+            err := bc.addRecord(iter.curRec)
+            if err != nil {
+                log.Printf("merge record[%+v] failed, err=%s\n", iter.curRec, err)
+                return err
+            }
         }
     }
+    end := time.Now()
+
+    // remove data file
+    os.Remove(df.fr.Path())
+
+    log.Println("merge data-file[%d] succ.", fileId)
+    return nil
 }
 
 func DestroyDatabase(dir string) error {

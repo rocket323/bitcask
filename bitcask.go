@@ -342,7 +342,7 @@ func (bc *BitCask) merge() {
     for begin := bc.minDataFileId; begin < end; begin++ {
         err := mergeDataFile(begin)
         if err != nil {
-            log.Println("merge data-file[%d] failed, err=%s", begin, err)
+            log.Println("merge datafile[%d] failed, err=%s", begin, err)
             return
         }
     }

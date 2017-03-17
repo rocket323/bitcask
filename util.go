@@ -17,15 +17,22 @@ func GetBaseFromId(id int64) string {
     return fmt.Sprintf("%09d", id)
 }
 
-func GetIdFromPath(path string) (int64, error) {
+func getIdFromDataPath(path string) (int64, error) {
     base := filepath.Base(path)
     name := strings.TrimSuffix(base, filepath.Ext(base))
+    if filepath.Ext(base) != ".data" {
+        return 0, ErrInvalid
+    }
     id, err := strconv.ParseInt(name, 10, 64)
     return id, err
 }
 
-func (bc *BitCask) GetDataFilePath(id int64) string {
+func (bc *BitCask) getDataFilePath(id int64) string {
     return bc.dir + "/" + GetBaseFromId(id) + ".data"
+}
+
+func (bc *BitCask) getHintFilePath(id int64) string {
+    return bc.dir + "/" + GetBaseFromId(id) + ".hint"
 }
 
 func (bc *BitCask) NewDataFileFromId(id int64) (*DataFile, error) {

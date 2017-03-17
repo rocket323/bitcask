@@ -22,6 +22,7 @@ type BitCask struct {
     dir         string
     keyDir      *KeyDir
     activeFile  *ActiveFile
+    activeKD    *KeyDir
     opts        *Options
     version     uint64
     snaps       map[uint64]*Snapshot
@@ -35,6 +36,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         dir: dir,
         keyDir: NewKeyDir(),
         activeFile: nil,
+        activeKD: NewKeyDir(),
         mu: &sync.RWMutex{},
         opts: opts,
         version: 0,
@@ -61,55 +63,117 @@ func (bc *BitCask) Restore() error {
 
     lastId := int64(0)
     for _, file := range files {
-        id, err := GetIdFromPath(file.Name())
+        name := file.Name()
+        id, err := getIdFromDataPath(name)
         if err != nil {
-            log.Printf("invalid dataFile name[%s], skip\n", file.Name())
-            continue
+            log.Printf("invalid datafile name[%s], skip\n", name)
         }
 
-        df, err := NewDataFile(bc.GetDataFilePath(id), id)
+        dataPath := bc.getDataFilePath(id)
+        hintPath := bc.getHintFilePath(id)
+
+        var activeKD *KeyDir
+        var err error
+        // if hintfile exists, restore from hintfile
+        if _, err := os.Stat(hintPath); err == nil {
+            kd, err = bc.restoreFromHintFile(hintPath, id)
+            if err == nil {
+                continue
+            }
+        }
+
+        // otherwise, restore from datafile
+        kd, err = restoreFromDataFile(dataPath, id)
         if err != nil {
             log.Println(err)
             return err
         }
 
-        iter := NewRecordIter(df, bc)
-        if err != nil {
-            log.Println(err)
-            return err
-        }
-        for iter.Reset(); iter.Valid(); iter.Next() {
-            rec := iter.curRec
-            curDirItem := &DirItem{
-                fileId: iter.df.id,
-                recOffset: iter.curPos,
-                timeStamp: rec.timeStamp,
-            }
-            di, err := bc.keyDir.Get(string(rec.key))
-            if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
-                err := bc.keyDir.Put(string(rec.key), curDirItem)
-                if err != nil {
-                    log.Println(err)
-                    return err
-                }
-            }
-            // log.Printf("restore key[%s]", string(rec.key))
-        }
-
-        if df.id > lastId {
-            lastId = df.id
+        if id > lastId {
+            bc.activeKD = activeKD
+            lastId = id
         }
     }
-    log.Printf("restore db[%s] succ, lastId[%d]\n", bc.dir, lastId)
 
     // make active file
-    bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(lastId), lastId, bc.opts.bufferSize)
+    bc.activeFile, err = NewActiveFile(bc.getDataFilePath(lastId), lastId, bc.opts.bufferSize)
     if err != nil {
         log.Println(err)
         return err
     }
 
     return nil
+}
+
+func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
+    hf, err : =NewHintFile(path, id, bc.opts.wbufSize)
+    if err != nil {
+        return nil, err
+    }
+
+    activeKD := NewKeyDir()
+    err = hf.ForEachItem(func (item *HintItem) error {
+        di := &DirItem{
+            fileId: hf.id,
+            valuePos: item.valuePos,
+            valueSize: item.valueSize,
+            expration: item.expration,
+        }
+
+        di, err := bc.keyDir.Get(string(rec.key))
+        if (err == nil && hf.id >= di.fileId) || err == ErrNotFound {
+            err := bc.keyDir.Put(string(rec.key), di)
+            if err != nil {
+                return err
+            }
+        }
+
+        // add active keydir
+        err = activeKD.Put(string(rec.key), di)
+        if err != nil {
+            return err
+        }
+
+        return nil
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return activeKD, nil
+}
+
+func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
+    df, err := NewDataFile(path, id, bc.opts.wbufSize)
+    if err != nil {
+        return nil, err
+    }
+    iter := NewRecordIter(df, bc)
+    activeKD = NewKeyDir()
+    for iter.Reset(); iter.Valid(); iter.Next() {
+        rec := iter.curRec
+        di := &DirItem{
+            fileId: iter.df.id,
+            valuePos: iter.curPos + rec.ValueFieldOffset(),
+            valueSize: rec.valueSize,
+            expration: rec.expration,
+        }
+        di, err := bc.keyDir.Get(string(rec.key))
+        if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
+            err := bc.keyDir.Put(string(rec.key), di)
+            if err != nil {
+                return nil, err
+            }
+        }
+
+        // add active keydir
+        err = activeKD.Put(string(rec.key), di)
+        if err != nil {
+            return nil, err
+        }
+    }
+    return activeKD, nil
 }
 
 func (bc *BitCask) Get(key string) ([]byte, error) {
@@ -185,7 +249,8 @@ func (bc *BitCask) addRecord(rec *Record) error {
     // update keyDir
     di := &DirItem{
         fileId: bc.activeFile.di,
-        recOffset: offset,
+        valuePos: offset + rec.ValueFieldOffset(),
+        valueSize: rec.valueSize,
         expration: rec.expration,
     }
     err = bc.keyDir.Put(key, di)
@@ -194,15 +259,59 @@ func (bc *BitCask) addRecord(rec *Record) error {
         return err
     }
 
+    err = bc.activeKD.Put(key, di)
+    if err != nil {
+        log.Println(err)
+        return err
+    }
+
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
-        nextFileId := bc.activeFile.id + 1
-        bc.activeFile.Close()
-        af, err := NewActiveFile(bc.GetDataFilePath(nextFileId), nextFileId, bc.opts.bufferSize)
+        bc.rotateActiveFile()
+    }
+    return nil
+}
+
+func (bc *BitCask) rotateActiveFile() error {
+    nextFileId := bc.activeFile.id + 1
+    bc.activeFile.Close()
+
+    err := generateHintFile(bc.activeFile.id)
+    if err != nil {
+        log.Println(err)
+        return err
+    }
+    bc.activeKD.Clear()
+
+    af, err := NewActiveFile(bc.getDataFilePath(nextFileId), nextFileId, bc.opts.bufferSize)
+    if err != nil {
+        log.Println(err)
+        return err
+    }
+    bc.activeFile = af
+
+    return nil
+}
+
+func (bc *BitCask) generateHintFile(fileId int64) error {
+    hf, err := NewHintFile(bc.getHintFilePath(fileId), fileId, bc.opts.wbufSize)
+    if err != nil {
+        return err
+    }
+    defer hf.Close()
+
+    for key, di := range bc.activeKD.mp {
+        hi := &HintItem{
+            expration: di.expration,
+            keySize: len(key),
+            valueSize: di.valueSize,
+            valuePos: di.valuePos,
+            key: []byte(key),
+        }
+        err := hf.AddItem(hi)
         if err != nil {
             log.Println(err)
             return err
         }
-        bc.activeFile = af
     }
     return nil
 }

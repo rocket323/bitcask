@@ -13,8 +13,8 @@ type Record struct {
     expration   uint32
     keySize     int64
     valueSize   int64
-    key         []byte
     value       []byte
+    key         []byte
 }
 
 const (
@@ -26,14 +26,14 @@ func (r *Record) Size() int64 {
 }
 
 func (r *Record) ValueFieldOffset() int64 {
-    return RECORD_HEADER_SIZE + r.keySize
+    return RECORD_HEADER_SIZE
 }
 
 func (r *Record) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
-    var data = []interface{} {
+    var data = []interface{}{
         r.crc32,
-        r.timeStamp,
+        r.expration,
         r.keySize,
         r.valueSize,
         r.key,
@@ -58,7 +58,7 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         return nil, err
     }
 
-    rec := &Record {
+    rec := &Record{
         crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
         timeStamp:      uint32(binary.LittleEndian.Uint32(header[4:8])),
         keySize:        int64(binary.LittleEndian.Uint64(header[8:16])),

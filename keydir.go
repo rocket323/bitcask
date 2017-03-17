@@ -5,7 +5,8 @@ import (
 
 type DirItem struct {
     fileId      int64
-    recOffset   int64
+    valuePos    int64
+    valueSize   int64
     expration   uint32
 }
 
@@ -39,5 +40,9 @@ func (kd *KeyDir) Del(key string) error {
     }
     delete(kd.mp, key)
     return nil
+}
+
+func (kd *KeyDir) Clear() error {
+    kd.mp = make(map[string]*DirItem)
 }
 

@@ -36,7 +36,7 @@ func (bc *BitCask) getHintFilePath(id int64) string {
 }
 
 func (bc *BitCask) NewDataFileFromId(id int64) (*DataFile, error) {
-    path := bc.GetDataFilePath(id)
+    path := bc.getDataFilePath(id)
     df, err := NewDataFile(path, id)
     if err != nil {
         return nil, err
@@ -53,7 +53,7 @@ func (bc *BitCask) FirstFileId() int64 {
 
     minId := int64(-1)
     for _, file := range files {
-        id, err := GetIdFromPath(file.Name())
+        id, err := getIdFromDataPath(file.Name())
         if err != nil {
             log.Printf("invalid dataFile name[%s], skip\n", file.Name())
             continue
@@ -72,7 +72,7 @@ func (bc *BitCask) NextFileId(id int64) int64 {
             id = -1
             break
         }
-        name := bc.GetDataFilePath(id)
+        name := bc.getDataFilePath(id)
         if _, err := os.Stat(name); os.IsNotExist(err) {
             continue
         }
@@ -80,3 +80,4 @@ func (bc *BitCask) NextFileId(id int64) int64 {
     }
     return id
 }
+

@@ -115,7 +115,7 @@ func (it *SnapshotIter) Next() {
             it.valid = false
             return
         }
-        raf, err := it.snap.bc.NewDataFileFromId(nextFileId, false)
+        raf, err := it.snap.bc.NewDataFileFromId(nextFileId)
         if err != nil {
             it.valid = false
             return

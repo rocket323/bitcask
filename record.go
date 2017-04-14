@@ -25,7 +25,7 @@ func (r *Record) Size() int64 {
     return RECORD_HEADER_SIZE + r.keySize + r.valueSize
 }
 
-func (r *Record) ValueFieldOffset() int64 {
+func RecordValueOffset() int64 {
     return RECORD_HEADER_SIZE
 }
 
@@ -60,7 +60,7 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
 
     rec := &Record{
         crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
-        timeStamp:      uint32(binary.LittleEndian.Uint32(header[4:8])),
+        expration:      uint32(binary.LittleEndian.Uint32(header[4:8])),
         keySize:        int64(binary.LittleEndian.Uint64(header[8:16])),
         valueSize:      int64(binary.LittleEndian.Uint64(header[16:24])),
     }

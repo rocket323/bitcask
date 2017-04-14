@@ -47,7 +47,7 @@ func (c *DataFileCache) Ref(fileId int64) (*DataFile, error) {
         return v.(*DataFile), nil
     }
 
-    path := c.bc.GetDataFilePath(fileId)
+    path := c.bc.getDataFilePath(fileId)
     df, err := NewDataFile(path, fileId)
     if err != nil {
         return nil, err

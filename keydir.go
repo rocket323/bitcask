@@ -42,7 +42,7 @@ func (kd *KeyDir) Del(key string) error {
     return nil
 }
 
-func (kd *KeyDir) Clear() error {
+func (kd *KeyDir) Clear() {
     kd.mp = make(map[string]*DirItem)
 }
 

@@ -1,6 +1,10 @@
 package bitcask
 
 import (
+    "io"
+    "bytes"
+    "encoding/binary"
+    "log"
 )
 
 type HintItem struct {
@@ -35,7 +39,7 @@ func (hi *HintItem) Encode() ([]byte, error) {
     return buf.Bytes(), nil
 }
 
-func parseHintItemAt(f fileReader, offset int64) (*HintItem, error) {
+func parseHintItemAt(f FileReader, offset int64) (*HintItem, error) {
     header, err := f.ReadAt(offset, HINT_ITEM_HEADER_SIZE)
     if err != nil {
         return nil, err
@@ -43,9 +47,9 @@ func parseHintItemAt(f fileReader, offset int64) (*HintItem, error) {
 
     hi := &HintItem{
         expration:      uint32(binary.LittleEndian.Uint32(header[0:4])),
-        keySize:        int64(binary.LittleEndian.Int64(header[4:12])),
-        valueSize:      int64(binary.LittleEndian.Int64(header[12:20])),
-        valuePos:       int64(binary.LittleEndian.Int64(header[20:28])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[4:12])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[12:20])),
+        valuePos:       int64(binary.LittleEndian.Uint64(header[20:28])),
     }
 
     offset += HINT_ITEM_HEADER_SIZE

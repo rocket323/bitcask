@@ -95,7 +95,7 @@ func (it *SnapshotIter) Valid() bool {
         return false
     }
     if it.recIter.df.id == it.snap.activeFileId {
-        if it.recIter.curPos >= it.snap.lastActiveSize {
+        if it.recIter.recPos >= it.snap.lastActiveSize {
             return false
         }
     }

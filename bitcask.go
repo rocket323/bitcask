@@ -35,14 +35,15 @@ type BitCask struct {
 func Open(dir string, opts *Options) (*BitCask, error) {
     bc := &BitCask{
         dir: dir,
-        keyDir: NewKeyDir(),
         activeFile: nil,
+        keyDir: NewKeyDir(),
         activeKD: NewKeyDir(),
         mu: &sync.RWMutex{},
         opts: opts,
         version: 0,
         snaps: make(map[uint64]*Snapshot),
         isMerging: 0,
+        minDataFileId: -1,
     }
     bc.recCache = NewRecordCache(int(opts.cacheSize), bc)
     bc.dfCache = NewDataFileCache(int(opts.maxOpenFiles), bc)
@@ -95,6 +96,9 @@ func (bc *BitCask) Restore() error {
             bc.activeKD = kd
             lastId = id
         }
+        if bc.minDataFileId == -1 || id < bc.minDataFileId {
+            bc.minDataFileId = id
+        }
     }
 
     // make active file
@@ -124,13 +128,14 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
 
         di, err := bc.keyDir.Get(string(item.key))
         if (err == nil && hf.id >= di.fileId) || err == ErrNotFound {
+            // add to keydir
             err := bc.keyDir.Put(string(item.key), di)
             if err != nil {
                 return err
             }
         }
 
-        // add active keydir
+        // add to active keydir
         err = activeKD.Put(string(item.key), di)
         if err != nil {
             return err
@@ -154,22 +159,23 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
     iter := NewRecordIter(df, bc)
     activeKD := NewKeyDir()
     for iter.Reset(); iter.Valid(); iter.Next() {
-        rec := iter.curRec
+        rec := iter.rec
         di := &DirItem{
             fileId: iter.df.id,
-            valuePos: iter.curPos + RecordValueOffset(),
+            valuePos: iter.recPos + RecordValueOffset(),
             valueSize: rec.valueSize,
             expration: rec.expration,
         }
         di, err := bc.keyDir.Get(string(rec.key))
         if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
+            // add to keydir
             err := bc.keyDir.Put(string(rec.key), di)
             if err != nil {
                 return nil, err
             }
         }
 
-        // add active keydir
+        // add to active keydir
         err = activeKD.Put(string(rec.key), di)
         if err != nil {
             return nil, err
@@ -185,6 +191,11 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
     di, err := bc.keyDir.Get(key)
     if err != nil {
         return nil, err
+    }
+
+    if di.valueSize < 0 {
+        log.Printf("key[%s] has been deleted", string(key))
+        return nil, ErrNotFound
     }
 
     rec, err := bc.recCache.Ref(di.fileId, di.valuePos - RecordValueOffset())
@@ -359,29 +370,30 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
     begin := time.Now()
     iter := NewRecordIter(df, bc)
     for iter.Reset(); iter.Valid(); iter.Next() {
-        rec := iter.curRec
+        rec := iter.rec
 
         kdItem, _ := bc.keyDir.Get(string(rec.key))
         if kdItem != nil && kdItem.fileId == iter.df.id &&
-            kdItem.valuePos - RecordValueOffset() == iter.curPos {
+            kdItem.valuePos - RecordValueOffset() == iter.recPos {
             // skip exprired key
             if int64(kdItem.expration) <= begin.Unix() {
                 continue
             }
 
-            err := bc.addRecord(iter.curRec)
+            err := bc.addRecord(iter.rec)
             if err != nil {
-                log.Printf("merge record[%+v] failed, err=%s\n", iter.curRec, err)
+                log.Printf("merge record[%+v] failed, err=%s\n", iter.rec, err)
                 return err
             }
         }
     }
-    // end := time.Now()
+    end := time.Now()
 
     // remove data file
     os.Remove(df.fr.Path())
 
-    log.Println("merge data-file[%d] succ.", fileId)
+    log.Println("merge data-file[%d] succ. cost %d seconds", fileId,
+            int64(end.Sub(begin).Seconds()))
     return nil
 }
 

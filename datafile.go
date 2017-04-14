@@ -21,6 +21,8 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
     return df, nil
 }
 
+///////////////////////////////////
+
 type DataFileCache struct {
     cache       *lru.Cache
     capacity    int

@@ -10,7 +10,7 @@ import (
     "os"
 )
 
-func GetBaseFromId(id int64) string {
+func getBaseFromId(id int64) string {
     if id < 0 {
         return "INVALID"
     }
@@ -28,11 +28,11 @@ func getIdFromDataPath(path string) (int64, error) {
 }
 
 func (bc *BitCask) getDataFilePath(id int64) string {
-    return bc.dir + "/" + GetBaseFromId(id) + ".data"
+    return bc.dir + "/" + getBaseFromId(id) + ".data"
 }
 
 func (bc *BitCask) getHintFilePath(id int64) string {
-    return bc.dir + "/" + GetBaseFromId(id) + ".hint"
+    return bc.dir + "/" + getBaseFromId(id) + ".hint"
 }
 
 func (bc *BitCask) NewDataFileFromId(id int64) (*DataFile, error) {

@@ -9,6 +9,7 @@ import (
 )
 
 type Record struct {
+    flag        uint16
     crc32       uint32
     expration   uint32
     keySize     int64
@@ -18,7 +19,11 @@ type Record struct {
 }
 
 const (
-    RECORD_HEADER_SIZE = 24
+    RECORD_FLAG_DELETED = 1 << iota
+)
+
+const (
+    RECORD_HEADER_SIZE = 25
 )
 
 func (r *Record) Size() int64 {
@@ -32,12 +37,13 @@ func RecordValueOffset() int64 {
 func (r *Record) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
     var data = []interface{}{
+        r.flag,
         r.crc32,
         r.expration,
         r.keySize,
         r.valueSize,
-        r.key,
         r.value,
+        r.key,
     }
     for _, v := range data {
         err := binary.Write(buf, binary.LittleEndian, v)
@@ -59,21 +65,22 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
     }
 
     rec := &Record{
-        crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
-        expration:      uint32(binary.LittleEndian.Uint32(header[4:8])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[8:16])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[16:24])),
+        flag:           uint16(binary.LittleEndian.Uint16(header[0:2])),
+        crc32:          uint32(binary.LittleEndian.Uint32(header[2:6])),
+        expration:      uint32(binary.LittleEndian.Uint32(header[6:10])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[10:18])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[18:26])),
     }
 
     offset += RECORD_HEADER_SIZE
-    rec.key, err = f.ReadAt(offset, rec.keySize)
+    rec.value, err = f.ReadAt(offset, rec.valueSize)
     if err != nil {
         log.Println(err)
         return nil, err
     }
 
     offset += rec.keySize
-    rec.value, err = f.ReadAt(offset, rec.valueSize)
+    rec.key, err = f.ReadAt(offset, rec.keySize)
     if err != nil {
         log.Println(err)
         return nil, err
@@ -86,8 +93,8 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
 
 type RecordIter struct {
     df          *DataFile
-    curPos      int64
-    curRec      *Record
+    recPos      int64
+    rec         *Record
     valid       bool
     bc          *BitCask
 }
@@ -95,8 +102,8 @@ type RecordIter struct {
 func NewRecordIter(df *DataFile, bc *BitCask) *RecordIter {
     iter := &RecordIter {
         df: df,
-        curPos: 0,
-        curRec: nil,
+        recPos: 0,
+        rec: nil,
         valid: false,
         bc: bc,
     }
@@ -104,10 +111,10 @@ func NewRecordIter(df *DataFile, bc *BitCask) *RecordIter {
 }
 
 func (it *RecordIter) Reset() {
-    it.curPos = 0
+    it.recPos = 0
     it.valid = true
     var err error
-    it.curRec, err = it.bc.recCache.Ref(it.df.id, it.curPos)
+    it.rec, err = it.bc.recCache.Ref(it.df.id, it.recPos)
     if err != nil {
         it.valid = false
         return
@@ -124,12 +131,12 @@ func (it *RecordIter) Valid() bool {
 }
 
 func (it *RecordIter) Next() {
-    if !it.valid || it.curRec == nil {
+    if !it.valid || it.rec == nil {
         return
     }
-    it.curPos += it.curRec.Size()
+    it.recPos += it.rec.Size()
     var err error
-    it.curRec, err = it.bc.recCache.Ref(it.df.id, it.curPos)
+    it.rec, err = it.bc.recCache.Ref(it.df.id, it.recPos)
     if err != nil {
         it.valid = false
         return
@@ -137,11 +144,11 @@ func (it *RecordIter) Next() {
 }
 
 func (it *RecordIter) Key() []byte {
-    return it.curRec.key
+    return it.rec.key
 }
 
 func (it *RecordIter) Value() []byte {
-    return it.curRec.value
+    return it.rec.value
 }
 
 /////////////////////////////////

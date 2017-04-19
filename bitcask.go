@@ -200,6 +200,7 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
 
     rec, err := bc.recCache.Ref(di.fileId, di.valuePos - RecordValueOffset())
     if err != nil {
+        log.Printf("ref file[%d] at offset[%d] failed, err=%s\n", di.fileId, di.valuePos - RecordValueOffset(), err)
         return nil, err
     }
     return rec.value, nil
@@ -236,6 +237,7 @@ func (bc *BitCask) SetWithExpr(key []byte, value []byte, expration uint32) error
     keySize := len(key)
     valueSize := len(value)
     rec := &Record{
+        flag : 0,
         crc32: 0,
         expration: expration,
         keySize: int64(keySize),
@@ -285,6 +287,7 @@ func (bc *BitCask) addRecord(rec *Record) error {
 
 func (bc *BitCask) rotateActiveFile() error {
     nextFileId := bc.activeFile.id + 1
+    log.Printf("rotate activeFile to %d", nextFileId)
     bc.activeFile.Close()
 
     err := bc.generateHintFile(bc.activeFile.id)

@@ -12,8 +12,8 @@ type Record struct {
     flag        uint16
     crc32       uint32
     expration   uint32
-    keySize     int64
     valueSize   int64
+    keySize     int64
     value       []byte
     key         []byte
 }
@@ -23,7 +23,7 @@ const (
 )
 
 const (
-    RECORD_HEADER_SIZE = 25
+    RECORD_HEADER_SIZE = 26
 )
 
 func (r *Record) Size() int64 {
@@ -40,8 +40,8 @@ func (r *Record) Encode() ([]byte, error) {
         r.flag,
         r.crc32,
         r.expration,
-        r.keySize,
         r.valueSize,
+        r.keySize,
         r.value,
         r.key,
     }
@@ -61,6 +61,8 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         if err != io.EOF {
             log.Println(err)
         }
+        log.Printf("parse file[%s] size[%d] at offset[%d], header_size[%d] failed, err=%s\n",
+                f.Path(), f.Size(), offset, RECORD_HEADER_SIZE, err)
         return nil, err
     }
 
@@ -68,8 +70,8 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         flag:           uint16(binary.LittleEndian.Uint16(header[0:2])),
         crc32:          uint32(binary.LittleEndian.Uint32(header[2:6])),
         expration:      uint32(binary.LittleEndian.Uint32(header[6:10])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[10:18])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[18:26])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[10:18])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[18:26])),
     }
 
     offset += RECORD_HEADER_SIZE
@@ -79,7 +81,7 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         return nil, err
     }
 
-    offset += rec.keySize
+    offset += rec.valueSize
     rec.key, err = f.ReadAt(offset, rec.keySize)
     if err != nil {
         log.Println(err)
@@ -181,14 +183,21 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
     }
 
     // parse record at data file
-    df, err := rc.bc.dfCache.Ref(fileId)
-    if err != nil {
-        return nil, err
+    var fr FileReader
+    if fileId == rc.bc.activeFile.id {
+        fr = rc.bc.activeFile
+    } else {
+        df, err := rc.bc.dfCache.Ref(fileId)
+        if err != nil {
+            return nil, err
+        }
+        defer rc.bc.dfCache.Unref(fileId)
+        fr = df.fr
     }
-    defer rc.bc.dfCache.Unref(fileId)
 
-    rec, err := parseRecordAt(df.fr, offset)
+    rec, err := parseRecordAt(fr, offset)
     if err != nil {
+        log.Printf("fileId[%d], size[%d], offset[%d], err=%s\n", fileId, fr.Size(), offset, err)
         return nil, err
     }
     rc.cache.Put(recKey, rec)

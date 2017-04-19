@@ -3,6 +3,7 @@ package bitcask
 import (
     "os"
     "io"
+    "log"
 )
 
 type FileReader interface {
@@ -46,7 +47,7 @@ func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffe
 func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
     data := make([]byte, len)
     fileSize := f.size - int64(f.n)     // size of file, (buffer size excluded)
-    var nn int = 0                    // bytes we have readed
+    var nn int = 0                      // bytes we have readed
     var err error
 
     if offset < fileSize {
@@ -60,12 +61,15 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
             return data[:nn], err
         }
         offset = 0
+    } else {
+        offset -= fileSize
     }
     if offset < int64(f.n) {
-        nn += copy(data[nn:], f.wbuf[:f.n])
+        nn += copy(data[nn:], f.wbuf[offset:f.n])
     }
 
     if int64(nn) < len {
+        log.Printf("totalSize[%d], fileSize[%d], expect len[%d], actual[%d]", f.size, fileSize, len, nn)
         err = io.EOF
     }
     return data[:nn], err
@@ -92,6 +96,9 @@ func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {
     f.n += n
     nn += n
     f.size += int64(nn)
+    if err != nil {
+        log.Fatal("write file failed, err=", err)
+    }
     return
 }
 

@@ -49,7 +49,7 @@ func BenchRandomGet(num int) {
         key := fmt.Sprintf("%09d", rand.Int() % num)
         _, err := bc.Get(key)
         if err != nil && err != bitcask.ErrNotFound {
-            log.Println(err)
+            log.Printf("%d, get key[%s] failed, err=%s", i, key, err)
             panic(err)
         }
         if err == nil {

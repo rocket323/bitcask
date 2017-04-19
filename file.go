@@ -2,6 +2,7 @@ package bitcask
 
 import (
     "os"
+    "io"
 )
 
 type FileReader interface {
@@ -15,8 +16,8 @@ type FileWithBuffer struct {
     path        string
     f           *os.File
     size        int64
-    wbuf        []byte
-    n           int
+    wbuf        []byte      // write buffer
+    n           int         // bytes buffered in wbuf
 }
 
 func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffer, error) {
@@ -43,29 +44,31 @@ func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffe
 }
 
 func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
-    fileSize := f.size - int64(f.n)
-    remainLen := len
     data := make([]byte, len)
+    fileSize := f.size - int64(f.n)     // size of file, (buffer size excluded)
+    var nn int = 0                    // bytes we have readed
+    var err error
+
     if offset < fileSize {
-        var n int64
         if offset + len <= fileSize {
-            n = len
-            remainLen = 0
+            nn = int(len)
         } else {
-            n = fileSize - offset
-            remainLen = len - n
+            nn = int(fileSize - offset)
         }
-        nn, err := f.f.ReadAt(data[:n], offset)
+        nn, err = f.f.ReadAt(data[:nn], offset)
         if err != nil {
             return data[:nn], err
         }
         offset = 0
     }
-    if offset + remainLen > int64(f.n) {
-        return nil, ErrInvalid // FIXME
+    if offset < int64(f.n) {
+        nn += copy(data[nn:], f.wbuf[:f.n])
     }
-    n := copy(data[len-remainLen:], f.wbuf)
-    return data[:len-remainLen+int64(n)], nil
+
+    if int64(nn) < len {
+        err = io.EOF
+    }
+    return data[:nn], err
 }
 
 func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {

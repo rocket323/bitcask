@@ -176,6 +176,28 @@ func NewRecordCache(capacity int, bc *BitCask) *RecordCache {
 }
 
 func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
+
+    var fr FileReader
+
+    if rc.bc.activeFile != nil && fileId == rc.bc.activeFile.id {
+        fr = rc.bc.activeFile
+    } else {
+        path := rc.bc.getDataFilePath(fileId)
+        df, err := NewDataFile(path, fileId)
+        if err != nil {
+            log.Println(err)
+            return nil, err
+        }
+        fr = df.fr
+    }
+
+    rec, err := parseRecordAt(fr, offset)
+    if err != nil {
+        log.Println(err)
+        return nil, err
+    }
+
+    /*
     recKey := RecordKey{fileId, offset}
     v, err := rc.cache.Ref(recKey)
     if err == nil {
@@ -184,7 +206,7 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
 
     // parse record at data file
     var fr FileReader
-    if fileId == rc.bc.activeFile.id {
+    if rc.bc.activeFile != nil && fileId == rc.bc.activeFile.id {
         fr = rc.bc.activeFile
     } else {
         df, err := rc.bc.dfCache.Ref(fileId)
@@ -202,6 +224,7 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
     }
     rc.cache.Put(recKey, rec)
     rc.cache.Ref(recKey)
+    */
 
     return rec, nil
 }

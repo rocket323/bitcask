@@ -1,6 +1,8 @@
 package bitcask_test
 
 import (
+    "time"
+    "math/rand"
     "io"
     "fmt"
     "testing"
@@ -102,6 +104,44 @@ func TestFileLargeBuffer(t *testing.T) {
     }
     if string(data) != "yzz" {
         t.Errorf("content[%s] invalid\n", string(data))
+    }
+}
+
+func TestLargeData(t *testing.T) {
+    f, err := bitcask.NewFileWithBuffer("data.out", true, 10000)
+    if err != nil {
+        t.Error("open file failed, err=", err)
+    }
+    defer func() {
+        fmt.Println("remove data.out")
+        err := os.Remove("data.out")
+        if err != nil {
+            t.Error("remove file failed", err)
+        }
+    }()
+    defer f.Close()
+
+    rand.Seed(time.Now().UnixNano())
+
+    s := make([]byte, 1050)
+    for i := 0; i < 1000; i++ {
+        _, err := f.Write(s)
+        if err != nil {
+            t.Error(err)
+        }
+
+        /*
+        offset := int64(rand.Int()) % f.Size()
+        var len int64 = 100
+        if offset + len > f.Size() {
+            len = f.Size() - offset
+        }
+
+        _, err = f.ReadAt(offset, len)
+        if err != nil {
+            t.Error(err)
+        }
+        */
     }
 }
 

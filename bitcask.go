@@ -57,6 +57,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
 }
 
 func (bc *BitCask) Restore() error {
+    begin := time.Now()
     files, err := ioutil.ReadDir(bc.dir)
     if err != nil {
         log.Println(err)
@@ -108,6 +109,9 @@ func (bc *BitCask) Restore() error {
         return err
     }
 
+    end := time.Now()
+    log.Printf("bitcask restore succ! costs %d seconds.", int64(end.Sub(begin).Seconds()))
+
     return nil
 }
 
@@ -119,7 +123,7 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
 
     activeKD := NewKeyDir()
     err = hf.ForEachItem(func (item *HintItem) error {
-        di := &DirItem{
+        iter_di := &DirItem{
             fileId: hf.id,
             valuePos: item.valuePos,
             valueSize: item.valueSize,
@@ -129,14 +133,14 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
         di, err := bc.keyDir.Get(string(item.key))
         if (err == nil && hf.id >= di.fileId) || err == ErrNotFound {
             // add to keydir
-            err := bc.keyDir.Put(string(item.key), di)
+            err := bc.keyDir.Put(string(item.key), iter_di)
             if err != nil {
                 return err
             }
         }
 
         // add to active keydir
-        err = activeKD.Put(string(item.key), di)
+        err = activeKD.Put(string(item.key), iter_di)
         if err != nil {
             return err
         }
@@ -160,23 +164,24 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
     activeKD := NewKeyDir()
     for iter.Reset(); iter.Valid(); iter.Next() {
         rec := iter.rec
-        di := &DirItem{
+        iter_di := &DirItem{
             fileId: iter.df.id,
             valuePos: iter.recPos + RecordValueOffset(),
             valueSize: rec.valueSize,
             expration: rec.expration,
         }
         di, err := bc.keyDir.Get(string(rec.key))
+
         if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
             // add to keydir
-            err := bc.keyDir.Put(string(rec.key), di)
+            err := bc.keyDir.Put(string(rec.key), iter_di)
             if err != nil {
                 return nil, err
             }
         }
 
         // add to active keydir
-        err = activeKD.Put(string(rec.key), di)
+        err = activeKD.Put(string(rec.key), iter_di)
         if err != nil {
             return nil, err
         }
@@ -395,7 +400,7 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
     // remove data file
     os.Remove(df.fr.Path())
 
-    log.Println("merge data-file[%d] succ. cost %d seconds", fileId,
+    log.Printf("merge data-file[%d] succ. costs %d seconds", fileId,
             int64(end.Sub(begin).Seconds()))
     return nil
 }

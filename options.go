@@ -12,7 +12,8 @@ func NewOptions() *Options {
         maxFileSize: 100 * 1024 * 1024,
         cacheSize: 100 * 1024 * 1024,
         maxOpenFiles: 4096,
-        bufferSize: 10 * 1024 * 1024,
+        // bufferSize: 1 * 1024 * 1024 + 10,
+        bufferSize: 0,
     }
     return op
 }

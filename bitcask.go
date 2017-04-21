@@ -110,7 +110,7 @@ func (bc *BitCask) Restore() error {
     }
 
     end := time.Now()
-    log.Printf("bitcask restore succ! costs %d seconds.", int64(end.Sub(begin).Seconds()))
+    log.Printf("bitcask restore succ! costs %.2f seconds.", end.Sub(begin).Seconds())
 
     return nil
 }
@@ -398,10 +398,10 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
     end := time.Now()
 
     // remove data file
-    os.Remove(df.fr.Path())
+    os.Remove(df.Path())
 
-    log.Printf("merge data-file[%d] succ. costs %d seconds", fileId,
-            int64(end.Sub(begin).Seconds()))
+    log.Printf("merge data-file[%d] succ. costs %.2f seconds", fileId,
+            end.Sub(begin).Seconds())
     return nil
 }
 

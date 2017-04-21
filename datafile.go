@@ -5,7 +5,7 @@ import (
 )
 
 type DataFile struct {
-    fr  FileReader
+    FileReader
     id  int64
 }
 
@@ -15,8 +15,8 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
         return nil, err
     }
     df := &DataFile{
-        fr: f,
-        id: fileId,
+        f,
+        fileId,
     }
     return df, nil
 }
@@ -31,7 +31,7 @@ type DataFileCache struct {
 
 func NewDataFileCache(capacity int, bc *BitCask) *DataFileCache {
     onEvit := func(k interface{}, v interface{}) {
-        v.(*DataFile).fr.Close()
+        v.(*DataFile).Close()
     }
 
     c := lru.NewCache(capacity, onEvit)

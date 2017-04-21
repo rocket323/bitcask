@@ -125,7 +125,7 @@ func (it *RecordIter) Reset() {
 
 func (it *RecordIter) Close() {
     it.valid = false
-    it.df.fr.Close()
+    it.df.Close()
 }
 
 func (it *RecordIter) Valid() bool {
@@ -188,7 +188,7 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
             log.Println(err)
             return nil, err
         }
-        fr = df.fr
+        fr = df
     }
 
     rec, err := parseRecordAt(fr, offset)

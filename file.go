@@ -58,14 +58,6 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
         }
         nn, err = f.f.ReadAt(data[:nn], offset)
         if err != nil {
-            log.Printf("totalSize[%d], fileSize[%d], offset[%d], expect len[%d], actual[%d]", f.size, fileSize, offset, len, nn)
-
-            if fi, err2 := f.f.Stat(); err2 != nil {
-                log.Println(err2)
-            } else {
-                log.Printf("stat file_size: %d", fi.Size())
-            }
-
             return data[:nn], err
         }
         offset = 0
@@ -95,16 +87,6 @@ func (f *FileWithBuffer) CheckSize(total int64, n int, actual int64, l int) {
 }
 
 func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {
-    fi, err := f.f.Stat();
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    defer func(total int64, n int, actual int64, len int) {
-        //log.Println("check from write")
-        f.CheckSize(total, n, actual, len)
-    }(f.size, f.n, fi.Size(), len(data))
-
     for len(data) > len(f.wbuf) - int(f.n) && err == nil {
         var n int = 0
         if f.n == 0 {

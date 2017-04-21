@@ -26,19 +26,19 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
 type DataFileCache struct {
     cache       *lru.Cache
     capacity    int
-    bc          *BitCask
+    env         Env
 }
 
-func NewDataFileCache(capacity int, bc *BitCask) *DataFileCache {
+func NewDataFileCache(env Env) *DataFileCache {
     onEvit := func(k interface{}, v interface{}) {
         v.(*DataFile).Close()
     }
-
-    c := lru.NewCache(capacity, onEvit)
+    opts := env.getOptions()
+    c := lru.NewCache(int(opts.maxOpenFiles), onEvit)
     dfc := &DataFileCache{
         cache: c,
-        capacity: capacity,
-        bc:bc,
+        capacity: int(opts.maxOpenFiles),
+        env: env,
     }
     return dfc
 }
@@ -48,8 +48,9 @@ func (c *DataFileCache) Ref(fileId int64) (*DataFile, error) {
     if err == nil {
         return v.(*DataFile), nil
     }
+    env := c.env
 
-    path := c.bc.getDataFilePath(fileId)
+    path := env.getDataFilePath(fileId)
     df, err := NewDataFile(path, fileId)
     if err != nil {
         return nil, err
@@ -59,8 +60,8 @@ func (c *DataFileCache) Ref(fileId int64) (*DataFile, error) {
     return df, nil
 }
 
-func (c *DataFileCache) Unref(fileId int64) error {
-    return c.cache.Unref(fileId)
+func (c *DataFileCache) Unref(fileId int64) {
+    c.cache.Unref(fileId)
 }
 
 func (c *DataFileCache) Close() {

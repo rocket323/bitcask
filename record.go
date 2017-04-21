@@ -98,16 +98,14 @@ type RecordIter struct {
     recPos      int64
     rec         *Record
     valid       bool
-    bc          *BitCask
 }
 
-func NewRecordIter(df *DataFile, bc *BitCask) *RecordIter {
+func NewRecordIter(df *DataFile) *RecordIter {
     iter := &RecordIter {
         df: df,
         recPos: 0,
         rec: nil,
         valid: false,
-        bc: bc,
     }
     return iter
 }
@@ -116,7 +114,7 @@ func (it *RecordIter) Reset() {
     it.recPos = 0
     it.valid = true
     var err error
-    it.rec, err = it.bc.recCache.Ref(it.df.id, it.recPos)
+    it.rec, err = parseRecordAt(it.df, it.recPos)
     if err != nil {
         it.valid = false
         return
@@ -138,7 +136,7 @@ func (it *RecordIter) Next() {
     }
     it.recPos += it.rec.Size()
     var err error
-    it.rec, err = it.bc.recCache.Ref(it.df.id, it.recPos)
+    it.rec, err = parseRecordAt(it.df, it.recPos)
     if err != nil {
         it.valid = false
         return
@@ -157,7 +155,7 @@ func (it *RecordIter) Value() []byte {
 type RecordCache struct {
     cache           *lru.Cache
     capacity        int
-    bc              *BitCask
+    env             Env
 }
 
 type RecordKey struct {
@@ -165,66 +163,47 @@ type RecordKey struct {
     pos     int64
 }
 
-func NewRecordCache(capacity int, bc *BitCask) *RecordCache {
-    c := lru.NewCache(capacity, nil)
+func NewRecordCache(env Env) *RecordCache {
+    opts := env.getOptions()
+    c := lru.NewCache(int(opts.cacheSize), nil)
+
     rc := &RecordCache{
         cache: c,
-        capacity: capacity,
-        bc: bc,
+        capacity: int(opts.cacheSize),
+        env: env,
     }
     return rc
 }
 
 func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
-
-    var fr FileReader
-
-    if rc.bc.activeFile != nil && fileId == rc.bc.activeFile.id {
-        fr = rc.bc.activeFile
-    } else {
-        path := rc.bc.getDataFilePath(fileId)
-        df, err := NewDataFile(path, fileId)
-        if err != nil {
-            log.Println(err)
-            return nil, err
-        }
-        fr = df
-    }
-
-    rec, err := parseRecordAt(fr, offset)
-    if err != nil {
-        log.Println(err)
-        return nil, err
-    }
-
-    /*
     recKey := RecordKey{fileId, offset}
     v, err := rc.cache.Ref(recKey)
     if err == nil {
         return v.(*Record), nil
     }
-
-    // parse record at data file
     var fr FileReader
-    if rc.bc.activeFile != nil && fileId == rc.bc.activeFile.id {
-        fr = rc.bc.activeFile
+    env := rc.env
+
+    if env.getActiveFile() == nil {
+        log.Fatal("activeFiel is nil")
+    }
+    if fileId == env.getActiveFile().id {
+        fr = env.getActiveFile()
     } else {
-        df, err := rc.bc.dfCache.Ref(fileId)
+        df, err := env.refDataFile(fileId)
         if err != nil {
             return nil, err
         }
-        defer rc.bc.dfCache.Unref(fileId)
-        fr = df.fr
+        defer env.unrefDataFile(fileId)
+        fr = df
     }
 
     rec, err := parseRecordAt(fr, offset)
     if err != nil {
-        //log.Printf("fileId[%d], size[%d], offset[%d], err=%s\n", fileId, fr.Size(), offset, err)
         return nil, err
     }
     rc.cache.Put(recKey, rec)
     rc.cache.Ref(recKey)
-    */
 
     return rec, nil
 }

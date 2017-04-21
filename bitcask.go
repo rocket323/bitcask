@@ -45,8 +45,8 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         isMerging: 0,
         minDataFileId: -1,
     }
-    bc.recCache = NewRecordCache(int(opts.cacheSize), bc)
-    bc.dfCache = NewDataFileCache(int(opts.maxOpenFiles), bc)
+    bc.recCache = NewRecordCache(bc)
+    bc.dfCache = NewDataFileCache(bc)
 
     err := bc.Restore()
     if err != nil {
@@ -71,7 +71,8 @@ func (bc *BitCask) Restore() error {
         var id int64
         id, err = getIdFromDataPath(name)
         if err != nil {
-            log.Printf("invalid datafile name[%s], skip\n", name)
+            // log.Printf("invalid datafile name[%s], skip\n", name)
+            continue
         }
 
         dataPath := bc.getDataFilePath(id)
@@ -81,16 +82,11 @@ func (bc *BitCask) Restore() error {
         // if hintfile exists, restore from hintfile
         if _, err = os.Stat(hintPath); err == nil {
             kd, err = bc.restoreFromHintFile(hintPath, id)
-            if err == nil {
-                continue
-            }
+        } else { // otherwise, restore from datafile
+            kd, err = bc.restoreFromDataFile(dataPath, id)
         }
-
-        // otherwise, restore from datafile
-        kd, err = bc.restoreFromDataFile(dataPath, id)
         if err != nil {
-            log.Println(err)
-            return err
+            log.Fatal(err)
         }
 
         if id > lastId {
@@ -116,6 +112,7 @@ func (bc *BitCask) Restore() error {
 }
 
 func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
+    log.Printf("restore data from hint-file[%d]", id)
     hf, err := NewHintFile(path, id, bc.opts.bufferSize)
     if err != nil {
         return nil, err
@@ -156,11 +153,12 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
 }
 
 func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
+    log.Printf("restore data from data-file[%d]", id)
     df, err := NewDataFile(path, id)
     if err != nil {
         return nil, err
     }
-    iter := NewRecordIter(df, bc)
+    iter := NewRecordIter(df)
     activeKD := NewKeyDir()
     for iter.Reset(); iter.Valid(); iter.Next() {
         rec := iter.rec
@@ -376,7 +374,7 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
     defer bc.dfCache.Unref(fileId)
 
     begin := time.Now()
-    iter := NewRecordIter(df, bc)
+    iter := NewRecordIter(df)
     for iter.Reset(); iter.Valid(); iter.Next() {
         rec := iter.rec
 

@@ -1,7 +1,7 @@
 package bitcask
 
 import (
-    "log"
+    _ "log"
     "container/list"
 )
 
@@ -13,6 +13,7 @@ type Snapshot struct {
     iters                   *list.List
 }
 
+/*
 func (bc *BitCask) NewSnapshot() *Snapshot {
     bc.mu.Lock()
     defer bc.mu.Unlock()
@@ -136,4 +137,6 @@ func (it *SnapshotIter) Key() []byte {
 func (it *SnapshotIter) Value() []byte {
     return it.recIter.Value()
 }
+
+*/
 

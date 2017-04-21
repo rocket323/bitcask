@@ -1,7 +1,7 @@
 package bitcask
 
 import (
-    _ "log"
+    "log"
     "container/list"
 )
 
@@ -13,7 +13,6 @@ type Snapshot struct {
     iters                   *list.List
 }
 
-/*
 func (bc *BitCask) NewSnapshot() *Snapshot {
     bc.mu.Lock()
     defer bc.mu.Unlock()
@@ -65,18 +64,19 @@ func (sp *Snapshot) NewSnapshotIter() *SnapshotIter {
 func (it *SnapshotIter) SeekToFirst() error {
     sp := it.snap
     it.valid = true
-    firstId := sp.bc.FirstFileId()
+    firstId := sp.bc.getMinDataFileId()
     if firstId == -1 {
         it.valid = false
         return ErrNotFound
     }
-    df, err := sp.bc.NewDataFileFromId(firstId)
+    path := sp.bc.getDataFilePath(firstId)
+    df, err := NewDataFile(path, firstId)
     if err != nil {
         it.valid = false
         return ErrNotFound
     }
 
-    it.recIter = NewRecordIter(df, sp.bc)
+    it.recIter = NewRecordIter(df)
     it.recIter.Reset()
     return nil
 }
@@ -108,20 +108,22 @@ func (it *SnapshotIter) Next() {
         return
     }
     it.recIter.Next()
+    bc := it.snap.bc
 
     if !it.recIter.Valid() { // move to next file
         it.recIter.Close()
-        nextFileId := it.snap.bc.NextFileId(it.recIter.df.id)
+        nextFileId := bc.nextDataFileId(it.recIter.df.id)
         if nextFileId == -1 {
             it.valid = false
             return
         }
-        raf, err := it.snap.bc.NewDataFileFromId(nextFileId)
+        path := bc.getDataFilePath(nextFileId)
+        raf, err := NewDataFile(path, nextFileId)
         if err != nil {
             it.valid = false
             return
         }
-        it.recIter = NewRecordIter(raf, it.snap.bc)
+        it.recIter = NewRecordIter(raf)
         it.recIter.Reset()
     }
 }
@@ -137,6 +139,4 @@ func (it *SnapshotIter) Key() []byte {
 func (it *SnapshotIter) Value() []byte {
     return it.recIter.Value()
 }
-
-*/
 

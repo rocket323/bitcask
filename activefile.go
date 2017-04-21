@@ -31,9 +31,7 @@ func (af *ActiveFile) AddRecord(rec *Record) error {
 
     _, err = af.Write(buf)
     if err != nil {
-        // FIXME should undo the writing
-        log.Println(err)
-        return err
+        log.Fatal(err)
     }
     return nil
 }

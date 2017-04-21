@@ -1,6 +1,7 @@
 package bitcask
 
 import (
+    "os"
     "strings"
     "path/filepath"
     "fmt"
@@ -17,6 +18,7 @@ type Env interface {
     getDataFilePath(fileId int64) string
     getHintFilePath(fileId int64) string
     getMinDataFileId() int64
+    nextDataFileId(fileId int64) int64
 
     refDataFile(fileId int64) (*DataFile, error)
     unrefDataFile(fileId int64)
@@ -60,6 +62,18 @@ func (bc *BitCask) getHintFilePath(id int64) string {
 func (bc *BitCask) getMinDataFileId() int64 {
     return bc.minDataFileId
 }
+
+func (bc *BitCask) nextDataFileId(fileId int64) int64 {
+    for {
+        fileId++
+        path := bc.getDataFilePath(fileId)
+        if _, err := os.Stat(path); err == nil {
+            break
+        }
+    }
+    return fileId
+}
+
 func (bc *BitCask) getActiveFile() *ActiveFile {
     return bc.activeFile
 }

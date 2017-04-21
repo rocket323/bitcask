@@ -201,11 +201,13 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
         return nil, ErrNotFound
     }
 
-    rec, err := bc.recCache.Ref(di.fileId, di.valuePos - RecordValueOffset())
+    rec, err := bc.refRecord(di.fileId, di.valuePos - RecordValueOffset())
     if err != nil {
         log.Printf("ref file[%d] at offset[%d] failed, err=%s\n", di.fileId, di.valuePos - RecordValueOffset(), err)
         return nil, err
     }
+    defer bc.unrefRecord(di.fileId, di.valuePos - RecordValueOffset())
+
     return rec.value, nil
 }
 
@@ -357,7 +359,7 @@ func (bc *BitCask) merge() {
     end := bc.activeFile.id
     bc.mu.Unlock()
 
-    for begin := bc.minDataFileId; begin < end; begin++ {
+    for begin := bc.minDataFileId; begin < end; begin = bc.nextDataFileId(begin) {
         err := bc.mergeDataFile(begin)
         if err != nil {
             log.Println("merge datafile[%d] failed, err=%s", begin, err)

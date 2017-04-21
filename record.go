@@ -61,8 +61,6 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         if err != io.EOF {
             log.Println(err)
         }
-        log.Printf("parse file[%s] size[%d] at offset[%d], header_size[%d] failed, err=%s\n",
-                f.Path(), f.Size(), offset, RECORD_HEADER_SIZE, err)
         return nil, err
     }
 

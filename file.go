@@ -22,7 +22,7 @@ type FileWithBuffer struct {
 }
 
 func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffer, error) {
-    flags := os.O_RDWR
+    flags := os.O_RDWR | os.O_APPEND
     if create {
         flags |= os.O_CREATE
     }
@@ -83,30 +83,30 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
     return data[:nn], err
 }
 
-func (f *FileWithBuffer) CheckSize() {
+func (f *FileWithBuffer) CheckSize(total int64, n int, actual int64, l int) {
     fi, err := f.f.Stat();
     if err != nil {
         log.Fatal(err)
     }
     if f.size != int64(f.n) + fi.Size() {
-        log.Fatalf("total[%d] != buf[%d] + actual[%d]", f.size, f.n, fi.Size())
+        log.Printf("before total[%d], buf[%d, %d], actual[%d], writeLen[%d]", total, n, len(f.wbuf), actual, l)
+        log.Fatalf("after total[%d] != buf[%d] + actual[%d]", f.size, f.n, fi.Size())
     }
 }
 
 func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {
-    defer func() {
-        //log.Println("check from write")
-        f.CheckSize()
-    }()
-
-    _, err = f.f.Stat();
+    fi, err := f.f.Stat();
     if err != nil {
         log.Fatal(err)
     }
-    //log.Printf("(total[%d], buf[%d], actual[%d], write %d bytes", f.size, f.n, fi.Size(), len(data))
+
+    defer func(total int64, n int, actual int64, len int) {
+        //log.Println("check from write")
+        f.CheckSize(total, n, actual, len)
+    }(f.size, f.n, fi.Size(), len(data))
 
     for len(data) > len(f.wbuf) - int(f.n) && err == nil {
-        var n int
+        var n int = 0
         if f.n == 0 {
             n, err = f.f.Write(data)
         } else {

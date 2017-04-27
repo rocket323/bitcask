@@ -170,7 +170,7 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
             expration: rec.expration,
         }
         di, err := bc.keyDir.Get(string(rec.key))
-        log.Printf("restore key[%s], value[%s]", iter.Key(), iter.Value())
+        log.Printf("restore key[%s], value[%s], di: %+v", iter.Key(), iter.Value(), iter_di)
 
         if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
             // add to keydir

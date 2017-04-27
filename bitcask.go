@@ -1,6 +1,7 @@
 package bitcask
 
 import (
+    "io"
     "fmt"
     "sync"
     "io/ioutil"
@@ -75,7 +76,7 @@ func (bc *BitCask) Restore() error {
             continue
         }
 
-        dataPath := bc.getDataFilePath(id)
+        dataPath := bc.GetDataFilePath(id)
         hintPath := bc.getHintFilePath(id)
 
         var kd *KeyDir
@@ -99,7 +100,7 @@ func (bc *BitCask) Restore() error {
     }
 
     // make active file
-    bc.activeFile, err = NewActiveFile(bc.getDataFilePath(lastId), lastId, bc.opts.bufferSize)
+    bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(lastId), lastId, bc.opts.bufferSize)
     if err != nil {
         log.Println(err)
         return err
@@ -169,6 +170,7 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
             expration: rec.expration,
         }
         di, err := bc.keyDir.Get(string(rec.key))
+        log.Printf("restore key[%s], value[%s]", iter.Key(), iter.Value())
 
         if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
             // add to keydir
@@ -302,7 +304,7 @@ func (bc *BitCask) rotateActiveFile() error {
     }
     bc.activeKD.Clear()
 
-    af, err := NewActiveFile(bc.getDataFilePath(nextFileId), nextFileId, bc.opts.bufferSize)
+    af, err := NewActiveFile(bc.GetDataFilePath(nextFileId), nextFileId, bc.opts.bufferSize)
     if err != nil {
         log.Println(err)
         return err
@@ -359,7 +361,7 @@ func (bc *BitCask) merge() {
     end := bc.activeFile.id
     bc.mu.Unlock()
 
-    for begin := bc.minDataFileId; begin < end; begin = bc.nextDataFileId(begin) {
+    for begin := bc.minDataFileId; begin < end; begin = bc.NextDataFileId(begin) {
         err := bc.mergeDataFile(begin)
         if err != nil {
             log.Println("merge datafile[%d] failed, err=%s", begin, err)
@@ -425,6 +427,35 @@ func DestroyDatabase(dir string) error {
     }
 
     log.Println("clear db[%s] succ!", dir)
+    return nil
+}
+
+func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.Reader) error {
+    path := bc.GetDataFilePath(fileId)
+    f, err := os.OpenFile(path, os.O_WRONLY | os.O_CREATE, 0644)
+    if err != nil {
+        return err
+    }
+
+    _, err = f.Seek(offset, os.SEEK_SET)
+    if err != nil {
+        f.Close()
+        return err
+    }
+
+    _, err = io.CopyN(f, reader, length)
+    if err != nil {
+        f.Close()
+        return err
+    }
+
+    f.Close()
+
+    // update keydir
+    _, err = bc.restoreFromDataFile(path, fileId)
+    if err != nil {
+        return err
+    }
     return nil
 }
 

@@ -64,12 +64,12 @@ func (sp *Snapshot) NewSnapshotIter() *SnapshotIter {
 func (it *SnapshotIter) SeekToFirst() error {
     sp := it.snap
     it.valid = true
-    firstId := sp.bc.getMinDataFileId()
+    firstId := sp.bc.GetMinDataFileId()
     if firstId == -1 {
         it.valid = false
         return ErrNotFound
     }
-    path := sp.bc.getDataFilePath(firstId)
+    path := sp.bc.GetDataFilePath(firstId)
     df, err := NewDataFile(path, firstId)
     if err != nil {
         it.valid = false
@@ -112,12 +112,12 @@ func (it *SnapshotIter) Next() {
 
     if !it.recIter.Valid() { // move to next file
         it.recIter.Close()
-        nextFileId := bc.nextDataFileId(it.recIter.df.id)
+        nextFileId := bc.NextDataFileId(it.recIter.df.id)
         if nextFileId == -1 {
             it.valid = false
             return
         }
-        path := bc.getDataFilePath(nextFileId)
+        path := bc.GetDataFilePath(nextFileId)
         raf, err := NewDataFile(path, nextFileId)
         if err != nil {
             it.valid = false

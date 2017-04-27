@@ -15,10 +15,10 @@ type Env interface {
     getDataFileCache() *DataFileCache
 
     getActiveFile() *ActiveFile
-    getDataFilePath(fileId int64) string
+    GetDataFilePath(fileId int64) string
     getHintFilePath(fileId int64) string
-    getMinDataFileId() int64
-    nextDataFileId(fileId int64) int64
+    GetMinDataFileId() int64
+    NextDataFileId(fileId int64) int64
 
     refDataFile(fileId int64) (*DataFile, error)
     unrefDataFile(fileId int64)
@@ -53,25 +53,29 @@ func (bc *BitCask) getDataFileCache() *DataFileCache {
     return bc.dfCache
 }
 
-func (bc *BitCask) getDataFilePath(id int64) string {
+func (bc *BitCask) GetDataFilePath(id int64) string {
     return bc.dir + "/" + getBaseFromId(id) + ".data"
 }
 func (bc *BitCask) getHintFilePath(id int64) string {
     return bc.dir + "/" + getBaseFromId(id) + ".hint"
 }
-func (bc *BitCask) getMinDataFileId() int64 {
+func (bc *BitCask) GetMinDataFileId() int64 {
     return bc.minDataFileId
 }
 
-func (bc *BitCask) nextDataFileId(fileId int64) int64 {
+func (bc *BitCask) NextDataFileId(fileId int64) int64 {
     for {
         fileId++
-        path := bc.getDataFilePath(fileId)
+        path := bc.GetDataFilePath(fileId)
         if _, err := os.Stat(path); err == nil {
             break
         }
     }
     return fileId
+}
+
+func (bc *BitCask) ActiveFileId() int64 {
+    return bc.activeFile.id
 }
 
 func (bc *BitCask) getActiveFile() *ActiveFile {

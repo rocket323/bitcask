@@ -27,7 +27,11 @@ const (
 )
 
 func (r *Record) Size() int64 {
-    return RECORD_HEADER_SIZE + r.keySize + r.valueSize
+    var valueSize int64 = 0
+    if r.valueSize > 0 {
+        valueSize = r.valueSize
+    }
+    return RECORD_HEADER_SIZE + r.keySize + valueSize
 }
 
 func RecordValueOffset() int64 {
@@ -42,9 +46,12 @@ func (r *Record) Encode() ([]byte, error) {
         r.expration,
         r.valueSize,
         r.keySize,
-        r.value,
-        r.key,
     }
+    if r.valueSize > 0 {
+        data = append(data, r.value)
+    }
+    data = append(data, r.key)
+
     for _, v := range data {
         err := binary.Write(buf, binary.LittleEndian, v)
         if err != nil {
@@ -71,15 +78,21 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
         valueSize:      int64(binary.LittleEndian.Uint64(header[10:18])),
         keySize:        int64(binary.LittleEndian.Uint64(header[18:26])),
     }
-
-    offset += RECORD_HEADER_SIZE
-    rec.value, err = f.ReadAt(offset, rec.valueSize)
-    if err != nil {
-        log.Println(err)
-        return nil, err
+    var valueSize int64 = 0
+    if (rec.valueSize > 0) {
+        valueSize = rec.valueSize
     }
 
-    offset += rec.valueSize
+    offset += RECORD_HEADER_SIZE
+    if valueSize >= 0 {
+        rec.value, err = f.ReadAt(offset, valueSize)
+        if err != nil {
+            log.Println(err)
+            return nil, err
+        }
+    }
+
+    offset += valueSize
     rec.key, err = f.ReadAt(offset, rec.keySize)
     if err != nil {
         log.Println(err)

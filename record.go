@@ -9,6 +9,7 @@ import (
 )
 
 type Record struct {
+    slot        uint16
     flag        uint16
     crc32       uint32
     expration   uint32
@@ -23,7 +24,7 @@ const (
 )
 
 const (
-    RECORD_HEADER_SIZE = 26
+    RECORD_HEADER_SIZE = 28
 )
 
 func (r *Record) Size() int64 {
@@ -41,6 +42,7 @@ func RecordValueOffset() int64 {
 func (r *Record) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
     var data = []interface{}{
+        r.slot,
         r.flag,
         r.crc32,
         r.expration,
@@ -72,11 +74,12 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
     }
 
     rec := &Record{
-        flag:           uint16(binary.LittleEndian.Uint16(header[0:2])),
-        crc32:          uint32(binary.LittleEndian.Uint32(header[2:6])),
-        expration:      uint32(binary.LittleEndian.Uint32(header[6:10])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[10:18])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[18:26])),
+        slot:           uint16(binary.LittleEndian.Uint16(header[0:2])),
+        flag:           uint16(binary.LittleEndian.Uint16(header[2:4])),
+        crc32:          uint32(binary.LittleEndian.Uint32(header[4:8])),
+        expration:      uint32(binary.LittleEndian.Uint32(header[8:12])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[12:20])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[20:28])),
     }
     var valueSize int64 = 0
     if (rec.valueSize > 0) {

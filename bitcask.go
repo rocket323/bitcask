@@ -31,6 +31,7 @@ type BitCask struct {
     dfCache     *DataFileCache
     isMerging   int32
     minDataFileId int64
+    maxDataFileId int64
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
@@ -45,6 +46,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         snaps: make(map[uint64]*Snapshot),
         isMerging: 0,
         minDataFileId: -1,
+        maxDataFileId: 0,
     }
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
@@ -96,6 +98,9 @@ func (bc *BitCask) Restore() error {
         }
         if bc.minDataFileId == -1 || id < bc.minDataFileId {
             bc.minDataFileId = id
+        }
+        if id > bc.maxDataFileId {
+            bc.maxDataFileId = id
         }
     }
 
@@ -340,8 +345,12 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
 
 func (bc *BitCask) Close() error {
     bc.activeFile.Close()
-    bc.recCache.Close()
-    bc.dfCache.Close()
+    if bc.recCache != nil {
+        bc.recCache.Close()
+    }
+    if bc.dfCache != nil {
+        bc.dfCache.Close()
+    }
     return nil
 }
 
@@ -456,6 +465,47 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.
     if err != nil {
         return err
     }
+
+    if fileId > bc.maxDataFileId {
+        bc.maxDataFileId = fileId
+    }
+
     return nil
+}
+
+func (bc *BitCask) EnableCache(enable bool) {
+    if enable {
+        bc.recCache = NewRecordCache(bc)
+        bc.dfCache = NewDataFileCache(bc)
+        // TODO recreate active file
+
+        fileId := bc.maxDataFileId
+        path := bc.GetDataFilePath(fileId)
+        var err error
+        bc.activeFile, err = NewActiveFile(path, fileId, bc.opts.bufferSize)
+        if err != nil {
+            log.Fatal(err)
+            return
+        }
+        bc.activeKD, err = bc.restoreFromDataFile(path, fileId)
+        if err != nil {
+            log.Fatal(err)
+            return
+        }
+    } else {
+        if bc.activeFile != nil {
+            bc.activeFile.Close()
+            bc.activeFile = nil
+            bc.activeKD = nil
+        }
+        if bc.recCache != nil {
+            bc.recCache.Close()
+            bc.recCache = nil
+        }
+        if bc.dfCache != nil {
+            bc.dfCache.Close()
+            bc.dfCache = nil
+        }
+    }
 }
 

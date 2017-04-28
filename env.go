@@ -83,16 +83,41 @@ func (bc *BitCask) getActiveFile() *ActiveFile {
 }
 
 func (bc *BitCask) refDataFile(fileId int64) (*DataFile, error) {
-    return bc.dfCache.Ref(fileId)
+    if bc.dfCache != nil {
+        return bc.dfCache.Ref(fileId)
+    } else {
+        path := bc.GetDataFilePath(fileId)
+        df, err := NewDataFile(path, fileId)
+        if err != nil {
+            return nil, err
+        }
+        return df, nil
+    }
 }
 func (bc *BitCask) unrefDataFile(fileId int64) {
-    bc.dfCache.Unref(fileId)
+    if bc.dfCache != nil {
+        bc.dfCache.Unref(fileId)
+    }
 }
 
 func (bc *BitCask) refRecord(fileId int64, offset int64) (*Record, error) {
-    return bc.recCache.Ref(fileId, offset)
+    if bc.recCache != nil {
+        return bc.recCache.Ref(fileId, offset)
+    } else {
+        df, err := bc.refDataFile(fileId)
+        if err != nil {
+            return nil, err
+        }
+        rec, err := parseRecordAt(df, offset)
+        if err != nil {
+            return nil, err
+        }
+        return rec, nil
+    }
 }
 func (bc *BitCask) unrefRecord(fileId int64, offset int64) {
-    bc.recCache.Unref(fileId, offset)
+    if bc.recCache != nil {
+        bc.recCache.Unref(fileId, offset)
+    }
 }
 

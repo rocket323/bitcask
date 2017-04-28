@@ -33,6 +33,7 @@ func (af *ActiveFile) AddRecord(rec *Record) error {
     if err != nil {
         log.Fatal(err)
     }
+    af.Flush()
     return nil
 }
 

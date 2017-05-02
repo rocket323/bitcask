@@ -65,7 +65,34 @@ func (r *Record) Encode() ([]byte, error) {
 }
 
 func parseRecord(data []byte) (*Record, error) {
-    return nil, nil
+    rec := &Record{
+        slot:           uint16(binary.LittleEndian.Uint16(data[0:2])),
+        flag:           uint16(binary.LittleEndian.Uint16(data[2:4])),
+        crc32:          uint32(binary.LittleEndian.Uint32(data[4:8])),
+        expration:      uint32(binary.LittleEndian.Uint32(data[8:12])),
+        valueSize:      int64(binary.LittleEndian.Uint64(data[12:20])),
+        keySize:        int64(binary.LittleEndian.Uint64(data[20:28])),
+    }
+    var valueSize int64 = 0
+    if (rec.valueSize > 0) {
+        valueSize = rec.valueSize
+    }
+
+    if len(data) != int(rec.Size()) {
+        log.Printf("data size[%d] != record size[%d]", len(data), rec.Size())
+        return nil, ErrInvalid
+    }
+
+    var offset int64 = RECORD_HEADER_SIZE
+    if valueSize >= 0 {
+        rec.value = make([]byte, valueSize)
+        _ = copy(rec.value, data[offset:])
+    }
+
+    offset += valueSize
+    rec.key = make([]byte, rec.keySize)
+    _ = copy(rec.key, data[offset:])
+    return rec, nil
 }
 
 func parseRecordAt(f FileReader, offset int64) (*Record, error) {

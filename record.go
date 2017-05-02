@@ -64,6 +64,10 @@ func (r *Record) Encode() ([]byte, error) {
     return buf.Bytes(), nil
 }
 
+func parseRecord(data []byte) (*Record, error) {
+    return nil, nil
+}
+
 func parseRecordAt(f FileReader, offset int64) (*Record, error) {
     header, err := f.ReadAt(offset, RECORD_HEADER_SIZE)
     if err != nil {

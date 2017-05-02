@@ -439,35 +439,46 @@ func DestroyDatabase(dir string) error {
     return nil
 }
 
+/*
+ways to sync file
+1. new active file
+2. append to current active file
+3. del data file
+*/
 func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.Reader) error {
-    path := bc.GetDataFilePath(fileId)
-    f, err := os.OpenFile(path, os.O_WRONLY | os.O_CREATE, 0644)
+    af := bc.activeFile
+
+    if fileId == af.id + 1 {
+        bc.rotateActiveFile()
+        af = bc.activeFile
+    }
+    if fileId != af.id {
+        log.Printf("invalid sync fileId[%d] != active fileId[%d]", fileId, af.id)
+        return ErrInvalid
+    }
+
+    if af.Size() != offset {
+        log.Printf("cur active file[%d] size[%d] != offset[%d]", af.id, af.Size(), offset)
+        return ErrInvalid
+    }
+
+    data := make([]byte, int(length))
+    _, err := reader.Read(data)
     if err != nil {
+        log.Printf("read record data failed, err = %s", err)
         return err
     }
 
-    _, err = f.Seek(offset, os.SEEK_SET)
+    rec, err := parseRecord(data)
     if err != nil {
-        f.Close()
+        log.Printf("parse record failed, err = %s", err)
         return err
     }
 
-    _, err = io.CopyN(f, reader, length)
+    err = bc.addRecord(rec)
     if err != nil {
-        f.Close()
+        log.Printf("append record failed, err = %s", err)
         return err
-    }
-
-    f.Close()
-
-    // update keydir
-    _, err = bc.restoreFromDataFile(path, fileId)
-    if err != nil {
-        return err
-    }
-
-    if fileId > bc.maxDataFileId {
-        bc.maxDataFileId = fileId
     }
 
     return nil
@@ -477,27 +488,7 @@ func (bc *BitCask) EnableCache(enable bool) {
     if enable {
         bc.recCache = NewRecordCache(bc)
         bc.dfCache = NewDataFileCache(bc)
-        // TODO recreate active file
-
-        fileId := bc.maxDataFileId
-        path := bc.GetDataFilePath(fileId)
-        var err error
-        bc.activeFile, err = NewActiveFile(path, fileId, bc.opts.bufferSize)
-        if err != nil {
-            log.Fatal(err)
-            return
-        }
-        bc.activeKD, err = bc.restoreFromDataFile(path, fileId)
-        if err != nil {
-            log.Fatal(err)
-            return
-        }
     } else {
-        if bc.activeFile != nil {
-            bc.activeFile.Close()
-            bc.activeFile = nil
-            bc.activeKD = nil
-        }
         if bc.recCache != nil {
             bc.recCache.Close()
             bc.recCache = nil

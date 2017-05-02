@@ -19,6 +19,7 @@ type FileWithBuffer struct {
     size        int64
     wbuf        []byte      // write buffer
     n           int         // bytes buffered in wbuf
+    readIdx     int         // for Read() method
 }
 
 func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffer, error) {
@@ -40,6 +41,7 @@ func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffe
         size: fi.Size(),
         wbuf: make([]byte, wbufSize),
         n: 0,
+        readIdx: 0,
     }
     return fb, nil
 }

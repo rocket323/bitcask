@@ -1,6 +1,8 @@
 package bitcask
 
 import (
+    "hash/crc32"
+    "bytes"
     "io"
     "fmt"
     "sync"
@@ -32,6 +34,10 @@ type BitCask struct {
     isMerging   int32
     minDataFileId int64
     maxDataFileId int64
+
+    // support slots
+    keysInSlot  map[uint32]map[string]bool
+    keysInTag   map[string]map[string]bool
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
@@ -47,6 +53,8 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         isMerging: 0,
         minDataFileId: -1,
         maxDataFileId: 0,
+        keysInSlot: make(map[uint32]map[string]bool),
+        keysInTag: make(map[string]map[string]bool),
     }
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
@@ -233,7 +241,25 @@ func (bc *BitCask) Del(key string) error {
     }
     copy(rec.key, []byte(key))
 
-    return bc.addRecord(rec)
+    return bc.addRecord(rec, false)
+}
+
+func (bc *BitCask) DelLocal(key string) error {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
+    bc.version++
+
+    rec := &Record{
+        crc32: 0,
+        keySize: int64(len(key)),
+        valueSize: -1,
+        key: make([]byte, len(key)),
+        value: nil,
+    }
+    copy(rec.key, []byte(key))
+
+    return bc.addRecord(rec, true)
 }
 
 func (bc *BitCask) Set(key string, val []byte) error {
@@ -260,11 +286,38 @@ func (bc *BitCask) SetWithExpr(key []byte, value []byte, expration uint32) error
     copy(rec.key, []byte(key))
     copy(rec.value, value)
 
-    return bc.addRecord(rec)
+    return bc.addRecord(rec, false)
+}
+
+const (
+    MaxSlotNum = 1024
+)
+
+func HashTag(key []byte) []byte {
+    part := key
+    if i := bytes.IndexByte(part, '{'); i != -1 {
+        part = part[i+1:]
+    } else {
+        return key
+    }
+    if i := bytes.IndexByte(part, '}'); i != -1 {
+        return part[:i]
+    } else {
+        return key
+    }
+}
+
+func HashTagToSlot(tag []byte) uint32 {
+    return crc32.ChecksumIEEE(tag) % MaxSlotNum
+}
+
+func HashKeyToSlot(key []byte) ([]byte, uint32) {
+    tag := HashTag(key)
+    return tag, HashTagToSlot(tag)
 }
 
 // requires bc.mu held
-func (bc *BitCask) addRecord(rec *Record) error {
+func (bc *BitCask) addRecord(rec *Record, local bool) error {
     offset := bc.activeFile.Size()
     err := bc.activeFile.AddRecord(rec)
     if err != nil {
@@ -289,6 +342,22 @@ func (bc *BitCask) addRecord(rec *Record) error {
     if err != nil {
         log.Println(err)
         return err
+    }
+
+    // update slots and tags info
+    if !local {
+        tag, slot := HashKeyToSlot([]byte(rec.key))
+        if bc.keysInSlot[slot] == nil {
+            bc.keysInSlot[slot] = make(map[string]bool)
+        }
+        bc.keysInSlot[slot][string(rec.key)] = true
+
+        if len(tag) < len(rec.key) {
+            if bc.keysInTag[string(tag)] == nil {
+                bc.keysInTag[string(tag)] = make(map[string]bool)
+            }
+            bc.keysInTag[string(tag)][string(rec.key)] = true
+        }
     }
 
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
@@ -399,7 +468,7 @@ func (bc *BitCask) mergeDataFile(fileId int64) error {
                 continue
             }
 
-            err := bc.addRecord(iter.rec)
+            err := bc.addRecord(iter.rec, false)
             if err != nil {
                 log.Printf("merge record[%+v] failed, err=%s\n", iter.rec, err)
                 return err
@@ -475,7 +544,7 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.
         return err
     }
 
-    err = bc.addRecord(rec)
+    err = bc.addRecord(rec, false)
     if err != nil {
         log.Printf("append record failed, err = %s", err)
         return err
@@ -498,5 +567,32 @@ func (bc *BitCask) EnableCache(enable bool) {
             bc.dfCache = nil
         }
     }
+}
+
+func (bc *BitCask) FirstKeyUnderSlot(slot uint32) ([]byte, error) {
+    keys := bc.keysInSlot[slot]
+    if keys == nil {
+        return nil, nil
+    }
+    // return one random key
+    for k, _ := range keys {
+        delete(keys, k)
+        return []byte(k), nil
+    }
+    return nil, nil
+}
+
+func (bc *BitCask) AllKeysWithTag(tag []byte) ([][]byte, error) {
+    results := make([][]byte, 0)
+    keys, ok := bc.keysInTag[string(tag)]
+    if !ok || keys == nil {
+        results = append(results, tag)
+    } else {
+        for k, _ := range keys {
+            results = append(results, []byte(k))
+        }
+    }
+    delete(bc.keysInTag, string(tag))
+    return results, nil
 }
 

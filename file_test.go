@@ -1,4 +1,4 @@
-package bitcask_test
+package bitcask
 
 import (
     "time"
@@ -6,12 +6,11 @@ import (
     "io"
     "fmt"
     "testing"
-    "github.com/rocket323/bitcask"
     "os"
 )
 
 func TestFileSimple(t *testing.T) {
-    f, err := bitcask.NewFileWithBuffer("data.out", true, 10)
+    f, err := NewFileWithBuffer("data.out", true, 10)
     if err != nil {
         t.Error("open file failed, err=", err)
     }
@@ -67,7 +66,7 @@ func TestFileSimple(t *testing.T) {
 }
 
 func TestFileLargeBuffer(t *testing.T) {
-    f, err := bitcask.NewFileWithBuffer("data.out", true, 1000)
+    f, err := NewFileWithBuffer("data.out", true, 1000)
     if err != nil {
         t.Error("open file failed, err=", err)
     }
@@ -108,7 +107,7 @@ func TestFileLargeBuffer(t *testing.T) {
 }
 
 func TestLargeData(t *testing.T) {
-    f, err := bitcask.NewFileWithBuffer("data.out", true, 10000)
+    f, err := NewFileWithBuffer("data.out", true, 10000)
     if err != nil {
         t.Error("open file failed, err=", err)
     }

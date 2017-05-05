@@ -28,6 +28,7 @@ type Env interface {
 
 func getBaseFromId(id int64) string {
     if id < 0 {
+        panic(id)
         log.Fatalf("id[%d] < 0, invalid fileId", id)
     }
     return fmt.Sprintf("%09d", id)

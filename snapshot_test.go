@@ -1,9 +1,8 @@
-package bitcask_test
+package bitcask
 
 import (
     _ "fmt"
     _ "testing"
-    _ "github.com/rocket323/bitcask"
 )
 
 /*

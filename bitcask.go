@@ -11,7 +11,6 @@ import (
     "time"
     "os"
     "path/filepath"
-    "sync/atomic"
 )
 
 var (
@@ -51,13 +50,14 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         version: 0,
         snaps: make(map[uint64]*Snapshot),
         isMerging: 0,
-        minDataFileId: -1,
+        minDataFileId: 0,
         maxDataFileId: 0,
         keysInSlot: make(map[uint32]map[string]bool),
         keysInTag: make(map[string]map[string]bool),
     }
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
+    log.Printf("open bitcask at %s", dir)
 
     err := bc.Restore()
     if err != nil {
@@ -104,7 +104,7 @@ func (bc *BitCask) Restore() error {
             bc.activeKD = kd
             lastId = id
         }
-        if bc.minDataFileId == -1 || id < bc.minDataFileId {
+        if id < bc.minDataFileId {
             bc.minDataFileId = id
         }
         if id > bc.maxDataFileId {
@@ -183,7 +183,7 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
             expration: rec.expration,
         }
         di, err := bc.keyDir.Get(string(rec.key))
-        log.Printf("restore key[%s], value[%s], di: %+v", iter.Key(), iter.Value(), iter_di)
+        // log.Printf("restore key[%s], value[%s], di: %+v", iter.Key(), iter.Value(), iter_di)
 
         if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
             // add to keydir
@@ -316,6 +316,12 @@ func HashKeyToSlot(key []byte) ([]byte, uint32) {
     return tag, HashTagToSlot(tag)
 }
 
+func (bc *BitCask) AddRecord(rec *Record, local bool) error {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+    return bc.addRecord(rec, local)
+}
+
 // requires bc.mu held
 func (bc *BitCask) addRecord(rec *Record, local bool) error {
     offset := bc.activeFile.Size()
@@ -423,68 +429,6 @@ func (bc *BitCask) Close() error {
     return nil
 }
 
-func (bc *BitCask) Merge() {
-    bc.merge()
-}
-
-func (bc *BitCask) merge() {
-    if !atomic.CompareAndSwapInt32(&bc.isMerging, 0, 1) {
-        log.Println("there is a merge process running.")
-        return
-    }
-    defer atomic.CompareAndSwapInt32(&bc.isMerging, 1, 0)
-    log.Println("start merge...")
-
-    bc.mu.Lock()
-    end := bc.activeFile.id
-    bc.mu.Unlock()
-
-    for begin := bc.minDataFileId; begin < end; begin = bc.NextDataFileId(begin) {
-        err := bc.mergeDataFile(begin)
-        if err != nil {
-            log.Println("merge datafile[%d] failed, err=%s", begin, err)
-            return
-        }
-    }
-}
-
-func (bc *BitCask) mergeDataFile(fileId int64) error {
-    df, err := bc.dfCache.Ref(fileId)
-    if err != nil {
-        return err
-    }
-    defer bc.dfCache.Unref(fileId)
-
-    begin := time.Now()
-    iter := NewRecordIter(df)
-    for iter.Reset(); iter.Valid(); iter.Next() {
-        rec := iter.rec
-
-        kdItem, _ := bc.keyDir.Get(string(rec.key))
-        if kdItem != nil && kdItem.fileId == iter.df.id &&
-            kdItem.valuePos - RecordValueOffset() == iter.recPos {
-            // skip exprired key
-            if int64(kdItem.expration) <= begin.Unix() {
-                continue
-            }
-
-            err := bc.addRecord(iter.rec, false)
-            if err != nil {
-                log.Printf("merge record[%+v] failed, err=%s\n", iter.rec, err)
-                return err
-            }
-        }
-    }
-    end := time.Now()
-
-    // remove data file
-    os.Remove(df.Path())
-
-    log.Printf("merge data-file[%d] succ. costs %.2f seconds", fileId,
-            end.Sub(begin).Seconds())
-    return nil
-}
-
 func DestroyDatabase(dir string) error {
     log.Println("clearing db[%s]...", dir)
 
@@ -515,6 +459,9 @@ ways to sync file
 3. del data file
 */
 func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.Reader) error {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     af := bc.activeFile
 
     if fileId == af.id + 1 {
@@ -554,6 +501,9 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.
 }
 
 func (bc *BitCask) EnableCache(enable bool) {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     if enable {
         bc.recCache = NewRecordCache(bc)
         bc.dfCache = NewDataFileCache(bc)
@@ -570,6 +520,9 @@ func (bc *BitCask) EnableCache(enable bool) {
 }
 
 func (bc *BitCask) FirstKeyUnderSlot(slot uint32) ([]byte, error) {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     keys := bc.keysInSlot[slot]
     if keys == nil {
         return nil, nil
@@ -583,6 +536,9 @@ func (bc *BitCask) FirstKeyUnderSlot(slot uint32) ([]byte, error) {
 }
 
 func (bc *BitCask) AllKeysWithTag(tag []byte) ([][]byte, error) {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     results := make([][]byte, 0)
     keys, ok := bc.keysInTag[string(tag)]
     if !ok || keys == nil {

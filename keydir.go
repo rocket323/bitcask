@@ -5,8 +5,8 @@ import (
 
 type DirItem struct {
     fileId      int64
-    valuePos    int64
-    valueSize   int64
+    valuePos    uint32
+    valueSize   uint32
     expration   uint32
 }
 
@@ -24,7 +24,7 @@ func NewKeyDir() *KeyDir {
 func (kd *KeyDir) Get(key string) (*DirItem, error) {
     v, ok := kd.mp[key]
     if !ok {
-        return nil, ErrNotFound
+        return nil, ErrKeyNotFound
     }
     return v, nil
 }
@@ -36,7 +36,7 @@ func (kd *KeyDir) Put(key string, di *DirItem) error {
 
 func (kd *KeyDir) Del(key string) error {
     if _, ok := kd.mp[key]; !ok {
-        return ErrNotFound
+        return ErrKeyNotFound
     }
     delete(kd.mp, key)
     return nil

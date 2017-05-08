@@ -40,7 +40,8 @@ func (hi *HintItem) Encode() ([]byte, error) {
 }
 
 func parseHintItemAt(f FileReader, offset int64) (*HintItem, error) {
-    header, err := f.ReadAt(offset, HINT_ITEM_HEADER_SIZE)
+    header := make([]byte, HINT_ITEM_HEADER_SIZE)
+    _, err := f.ReadAt(header, offset)
     if err != nil {
         return nil, err
     }
@@ -53,7 +54,8 @@ func parseHintItemAt(f FileReader, offset int64) (*HintItem, error) {
     }
 
     offset += HINT_ITEM_HEADER_SIZE
-    hi.key, err = f.ReadAt(offset, hi.keySize)
+    hi.key = make([]byte, hi.keySize)
+    _, err = f.ReadAt(hi.key, offset)
     if err != nil {
         log.Println(err)
         return nil, err
@@ -88,13 +90,11 @@ func (hf *HintFile) ForEachItem(fn func(item *HintItem) error) error {
             if err == io.EOF {
                 break
             }
-            log.Println(err)
             return err
         }
 
         err = fn(hi)
         if err != nil {
-            log.Println(err)
             return err
         }
 

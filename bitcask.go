@@ -13,8 +13,8 @@ import (
 )
 
 var (
-    ErrNotFound = fmt.Errorf("not found")
-    ErrNotCompl = fmt.Errorf("record not completed")
+    ErrKeyNotFound = fmt.Errorf("key not found")
+    ErrRecordCorrupted = fmt.Errorf("record corrupted")
     ErrInvalid = fmt.Errorf("invalid")
 )
 
@@ -26,7 +26,6 @@ type BitCask struct {
     activeKD    *KeyDir
     opts        *Options
     version     uint64
-    snaps       map[uint64]*Snapshot
     recCache    *RecordCache
     dfCache     *DataFileCache
     isMerging   int32
@@ -47,7 +46,6 @@ func Open(dir string, opts *Options) (*BitCask, error) {
         mu: &sync.RWMutex{},
         opts: opts,
         version: 0,
-        snaps: make(map[uint64]*Snapshot),
         isMerging: 0,
         minDataFileId: 0,
         maxDataFileId: 0,
@@ -124,6 +122,40 @@ func (bc *BitCask) Restore() error {
     return nil
 }
 
+func (bc *BitCask) updateKeyDir(key []byte, di *DirItem, akd *KeyDir, fillSlot bool) error {
+    old, err := bc.keyDir.Get(key)
+    // add to keydir
+    if (err != nil && di.fileId >= old.fileId) || err == ErrKeyNotFound {
+        if err := bc.keyDir.Put(key, di); err != nil {
+            return err
+        }
+    }
+    // add to active keydir
+    if akd != nil {
+        if err := akd.Put(key, di); err != nil {
+            return err
+        }
+    }
+
+    // fill slot
+    if fillSlot {
+        tag, slot := HashKeyToSlot(key)
+        if bc.keysInSlot[slot] == nil {
+            bc.keysInSlot[slot] = make(map[string]bool)
+        }
+        bc.keysInSlot[slot][string(key)] = true
+
+        if len(tag) < len(key) {
+            if bc.keysInTag[string(tag)] == nil {
+                bc.keysInTag[string(tag)] = make(map[string]bool)
+            }
+            bc.keysInTag[string(tag)][string(key)] = true
+        }
+    }
+
+    return err
+}
+
 func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
     log.Printf("restore data from hint-file[%d]", id)
     hf, err := NewHintFile(path, id, bc.opts.bufferSize)
@@ -133,35 +165,21 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
 
     activeKD := NewKeyDir()
     err = hf.ForEachItem(func (item *HintItem) error {
-        iter_di := &DirItem{
+        di := &DirItem{
             fileId: hf.id,
             valuePos: item.valuePos,
             valueSize: item.valueSize,
             expration: item.expration,
         }
-
-        di, err := bc.keyDir.Get(string(item.key))
-        if (err == nil && hf.id >= di.fileId) || err == ErrNotFound {
-            // add to keydir
-            err := bc.keyDir.Put(string(item.key), iter_di)
-            if err != nil {
-                return err
-            }
-        }
-
-        // add to active keydir
-        err = activeKD.Put(string(item.key), iter_di)
-        if err != nil {
+        if err := bc.updateKeyDir(item.key, di, activeKD, true); err != nil {
             return err
         }
-
         return nil
     })
 
     if err != nil {
         return nil, err
     }
-
     return activeKD, nil
 }
 
@@ -175,26 +193,13 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
     activeKD := NewKeyDir()
     for iter.Reset(); iter.Valid(); iter.Next() {
         rec := iter.rec
-        iter_di := &DirItem{
+        di := &DirItem{
             fileId: iter.df.id,
             valuePos: iter.recPos + RecordValueOffset(),
             valueSize: rec.valueSize,
             expration: rec.expration,
         }
-        di, err := bc.keyDir.Get(string(rec.key))
-        // log.Printf("restore key[%s], value[%s], di: %+v", iter.Key(), iter.Value(), iter_di)
-
-        if (err == nil && iter.df.id >= di.fileId) || err == ErrNotFound {
-            // add to keydir
-            err := bc.keyDir.Put(string(rec.key), iter_di)
-            if err != nil {
-                return nil, err
-            }
-        }
-
-        // add to active keydir
-        err = activeKD.Put(string(rec.key), iter_di)
-        if err != nil {
+        if err := bc.updateKeyDir(rec.key, di, activeKD, true); err != nil {
             return nil, err
         }
     }
@@ -212,7 +217,7 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
 
     if di.valueSize < 0 {
         log.Printf("key[%s] has been deleted", string(key))
-        return nil, ErrNotFound
+        return nil, ErrKeyNotFound
     }
 
     rec, err := bc.refRecord(di.fileId, di.valuePos - RecordValueOffset())
@@ -232,11 +237,9 @@ func (bc *BitCask) Del(key string) error {
     bc.version++
 
     rec := &Record{
-        crc32: 0,
+        flag: RECORD_FLAG_DELETED,
         keySize: int64(len(key)),
-        valueSize: -1,
         key: make([]byte, len(key)),
-        value: nil,
     }
     copy(rec.key, []byte(key))
 
@@ -250,14 +253,11 @@ func (bc *BitCask) DelLocal(key string) error {
     bc.version++
 
     rec := &Record{
-        crc32: 0,
+        flag: RECORD_FLAG_DELETED,
         keySize: int64(len(key)),
-        valueSize: -1,
         key: make([]byte, len(key)),
-        value: nil,
     }
     copy(rec.key, []byte(key))
-
     return bc.addRecord(rec, true)
 }
 
@@ -274,13 +274,11 @@ func (bc *BitCask) SetWithExpr(key []byte, value []byte, expration uint32) error
     keySize := len(key)
     valueSize := len(value)
     rec := &Record{
-        flag : 0,
-        crc32: 0,
         expration: expration,
-        keySize: int64(keySize),
         valueSize: int64(valueSize),
-        key: make([]byte, keySize),
+        keySize: int64(keySize),
         value: make([]byte, valueSize),
+        key: make([]byte, keySize),
     }
     copy(rec.key, []byte(key))
     copy(rec.value, value)
@@ -315,54 +313,29 @@ func HashKeyToSlot(key []byte) ([]byte, uint32) {
     return tag, HashTagToSlot(tag)
 }
 
-func (bc *BitCask) AddRecord(rec *Record, local bool) error {
+func (bc *BitCask) AddRecord(rec *Record, fillSlot bool) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
     return bc.addRecord(rec, local)
 }
 
 // requires bc.mu held
-func (bc *BitCask) addRecord(rec *Record, local bool) error {
+func (bc *BitCask) addRecord(rec *Record, fillSlot bool) error {
     offset := bc.activeFile.Size()
     err := bc.activeFile.AddRecord(rec)
     if err != nil {
-        log.Println(err)
         return err
     }
 
-    // update keyDir
     di := &DirItem{
         fileId: bc.activeFile.id,
         valuePos: offset + RecordValueOffset(),
         valueSize: rec.valueSize,
         expration: rec.expration,
     }
-    err = bc.keyDir.Put(string(rec.key), di)
-    if err != nil {
-        log.Println(err)
+
+    if err := bc.updateKeyDir(di, rec.key, bc.activeKD, local); err != nil {
         return err
-    }
-
-    err = bc.activeKD.Put(string(rec.key), di)
-    if err != nil {
-        log.Println(err)
-        return err
-    }
-
-    // update slots and tags info
-    if !local {
-        tag, slot := HashKeyToSlot([]byte(rec.key))
-        if bc.keysInSlot[slot] == nil {
-            bc.keysInSlot[slot] = make(map[string]bool)
-        }
-        bc.keysInSlot[slot][string(rec.key)] = true
-
-        if len(tag) < len(rec.key) {
-            if bc.keysInTag[string(tag)] == nil {
-                bc.keysInTag[string(tag)] = make(map[string]bool)
-            }
-            bc.keysInTag[string(tag)][string(rec.key)] = true
-        }
     }
 
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
@@ -431,7 +404,7 @@ func (bc *BitCask) Close() error {
     return nil
 }
 
-func DestroyDatabase(dir string) error {
+func ClearAll(dir string) error {
     log.Println("clearing db[%s]...", dir)
 
     d, err := os.Open(dir)
@@ -452,6 +425,10 @@ func DestroyDatabase(dir string) error {
 
     log.Println("clear db[%s] succ!", dir)
     return nil
+}
+
+// truncate database to specific state
+func Truncate(fileId int64, size int64) error {
 }
 
 /*
@@ -480,7 +457,7 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byt
         return ErrInvalid
     }
 
-    rec, err := parseRecord(data)
+    rec, err := parseRecordAt(bytes.NewReader(data), 0)
     if err != nil {
         log.Printf("parse record failed, err = %s", err)
         return err

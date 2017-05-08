@@ -21,6 +21,27 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
     return df, nil
 }
 
+func (df *DataFile) ForEachItem(fn func(rec *Record) error) error {
+    var offset int64 = 0
+    for {
+        rec, err := parseRecordAt(df, offset)
+        if err != nil {
+            if err = io.EOF {
+                break
+            }
+            return err
+        }
+
+        err = fn(rec)
+        if err != nil {
+            return err
+        }
+        offset += rec.Size()
+    }
+
+    return nil
+}
+
 ///////////////////////////////////
 
 type DataFileCache struct {

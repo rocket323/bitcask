@@ -1,6 +1,7 @@
 package bitcask
 
 import (
+    "hash/crc32"
     "log"
     "bytes"
     "encoding/binary"
@@ -9,9 +10,8 @@ import (
 )
 
 type Record struct {
-    slot        uint16
-    flag        uint16
     crc32       uint32
+    flag        uint16
     expration   uint32
     valueSize   int64
     keySize     int64
@@ -21,18 +21,15 @@ type Record struct {
 
 const (
     RECORD_FLAG_DELETED = 1 << iota
+    RECORD_FLAG_BATCH
 )
 
 const (
-    RECORD_HEADER_SIZE = 28
+    RECORD_HEADER_SIZE = 26
 )
 
 func (r *Record) Size() int64 {
-    var valueSize int64 = 0
-    if r.valueSize > 0 {
-        valueSize = r.valueSize
-    }
-    return RECORD_HEADER_SIZE + r.keySize + valueSize
+    return RECORD_HEADER_SIZE + r.keySize + r.valueSize
 }
 
 func RecordValueOffset() int64 {
@@ -42,17 +39,13 @@ func RecordValueOffset() int64 {
 func (r *Record) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
     var data = []interface{}{
-        r.slot,
         r.flag,
-        r.crc32,
         r.expration,
         r.valueSize,
         r.keySize,
+        r.value,        // len(value) can be zero
+        r.key,
     }
-    if r.valueSize > 0 {
-        data = append(data, r.value)
-    }
-    data = append(data, r.key)
 
     for _, v := range data {
         err := binary.Write(buf, binary.LittleEndian, v)
@@ -61,42 +54,18 @@ func (r *Record) Encode() ([]byte, error) {
             return nil, err
         }
     }
-    return buf.Bytes(), nil
+
+    // calc crc32 and append it to head
+    r.crc32 = crc32.ChecksumIEEE(buf.Bytes())
+    crc := make([]byte, 4)
+    binary.LittleEndian.PutUint32(crc, r.crc32)
+
+    return append(crc, buf.Bytes()...), nil
 }
 
-func parseRecord(data []byte) (*Record, error) {
-    rec := &Record{
-        slot:           uint16(binary.LittleEndian.Uint16(data[0:2])),
-        flag:           uint16(binary.LittleEndian.Uint16(data[2:4])),
-        crc32:          uint32(binary.LittleEndian.Uint32(data[4:8])),
-        expration:      uint32(binary.LittleEndian.Uint32(data[8:12])),
-        valueSize:      int64(binary.LittleEndian.Uint64(data[12:20])),
-        keySize:        int64(binary.LittleEndian.Uint64(data[20:28])),
-    }
-    var valueSize int64 = 0
-    if (rec.valueSize > 0) {
-        valueSize = rec.valueSize
-    }
-
-    if len(data) != int(rec.Size()) {
-        log.Printf("data size[%d] != record size[%d]", len(data), rec.Size())
-        return nil, ErrInvalid
-    }
-
-    var offset int64 = RECORD_HEADER_SIZE
-    if valueSize >= 0 {
-        rec.value = make([]byte, valueSize)
-        _ = copy(rec.value, data[offset:])
-    }
-
-    offset += valueSize
-    rec.key = make([]byte, rec.keySize)
-    _ = copy(rec.key, data[offset:])
-    return rec, nil
-}
-
-func parseRecordAt(f FileReader, offset int64) (*Record, error) {
-    header, err := f.ReadAt(offset, RECORD_HEADER_SIZE)
+func parseRecordAt(r io.ReaderAt, offset int64) (*Record, error) {
+    header := make([]byte, RECORD_HEADER_SIZE)
+    _, err := r.ReadAt(header, offset)
     if err != nil {
         if err != io.EOF {
             log.Println(err)
@@ -105,95 +74,39 @@ func parseRecordAt(f FileReader, offset int64) (*Record, error) {
     }
 
     rec := &Record{
-        slot:           uint16(binary.LittleEndian.Uint16(header[0:2])),
-        flag:           uint16(binary.LittleEndian.Uint16(header[2:4])),
-        crc32:          uint32(binary.LittleEndian.Uint32(header[4:8])),
-        expration:      uint32(binary.LittleEndian.Uint32(header[8:12])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[12:20])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[20:28])),
-    }
-    var valueSize int64 = 0
-    if (rec.valueSize > 0) {
-        valueSize = rec.valueSize
+        crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
+        flag:           uint16(binary.LittleEndian.Uint16(header[4:6])),
+        expration:      uint32(binary.LittleEndian.Uint32(header[6:10])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[10:18])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[18:26])),
     }
 
     offset += RECORD_HEADER_SIZE
-    if valueSize >= 0 {
-        rec.value, err = f.ReadAt(offset, valueSize)
-        if err != nil {
-            log.Println(err)
-            return nil, err
-        }
-    }
-
-    offset += valueSize
-    rec.key, err = f.ReadAt(offset, rec.keySize)
+    rec.value = make([]byte, rec.valueSize)
+    _, err = r.ReadAt(rec.value, offset)
     if err != nil {
         log.Println(err)
         return nil, err
     }
 
+    offset += rec.valueSize
+    rec.key = make([]byte, rec.keySize)
+    _, err = r.ReadAt(rec.key, offset)
+    if err != nil {
+        log.Println(err)
+        return nil, err
+    }
+
+    // check crc
+    crc := crc32.ChecksumIEEE(header[4:])
+    crc = crc32.Update(crc, crc32.IEEETable, rec.value)
+    crc = crc32.Update(crc, crc32.IEEETable, rec.key)
+
+    if crc != rec.crc32 {
+        return nil, ErrRecordCorrupted
+    }
+
     return rec, nil
-}
-
-/////////////////////////////////
-
-type RecordIter struct {
-    df          *DataFile
-    recPos      int64
-    rec         *Record
-    valid       bool
-}
-
-func NewRecordIter(df *DataFile) *RecordIter {
-    iter := &RecordIter {
-        df: df,
-        recPos: 0,
-        rec: nil,
-        valid: false,
-    }
-    return iter
-}
-
-func (it *RecordIter) Reset() {
-    it.recPos = 0
-    it.valid = true
-    var err error
-    it.rec, err = parseRecordAt(it.df, it.recPos)
-    if err != nil {
-        it.valid = false
-        return
-    }
-}
-
-func (it *RecordIter) Close() {
-    it.valid = false
-    it.df.Close()
-}
-
-func (it *RecordIter) Valid() bool {
-    return it.valid
-}
-
-func (it *RecordIter) Next() {
-    if !it.valid || it.rec == nil {
-        return
-    }
-    it.recPos += it.rec.Size()
-    var err error
-    it.rec, err = parseRecordAt(it.df, it.recPos)
-    if err != nil {
-        it.valid = false
-        return
-    }
-}
-
-func (it *RecordIter) Key() []byte {
-    return it.rec.key
-}
-
-func (it *RecordIter) Value() []byte {
-    return it.rec.value
 }
 
 /////////////////////////////////
@@ -245,7 +158,7 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
 
     rec, err := parseRecordAt(fr, offset)
     if err != nil {
-        log.Printf("fileId %d, offset: %d, size: %d, err = %s", fileId, offset, fr.Size(), err)
+        // log.Printf("fileId %d, offset: %d, size: %d, err = %s", fileId, offset, fr.Size(), err)
         return nil, err
     }
     rc.cache.Put(recKey, rec)

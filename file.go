@@ -7,7 +7,7 @@ import (
 )
 
 type FileReader interface {
-    ReadAt(offset int64, len int64) ([]byte, error)
+    ReadAt(data []byte, offset int64) (int, error)
     Size() int64
     Close() error
     Path() string
@@ -46,8 +46,8 @@ func NewFileWithBuffer(path string, create bool, wbufSize int64) (*FileWithBuffe
     return fb, nil
 }
 
-func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
-    data := make([]byte, len)
+func (f *FileWithBuffer) ReadAt(data []byte, offset int64) (int, error) {
+    len := int64(len(data))
     fileSize := f.size - int64(f.n)     // size of file, (buffer size excluded)
     var nn int = 0                      // bytes we have readed
     var err error
@@ -60,7 +60,7 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
         }
         nn, err = f.f.ReadAt(data[:nn], offset)
         if err != nil {
-            return data[:nn], err
+            return nn, err
         }
         offset = 0
     } else {
@@ -73,7 +73,7 @@ func (f *FileWithBuffer) ReadAt(offset int64, len int64) ([]byte, error) {
     if int64(nn) < len {
         err = io.EOF
     }
-    return data[:nn], err
+    return nn, err
 }
 
 func (f *FileWithBuffer) Write(data []byte) (nn int, err error) {

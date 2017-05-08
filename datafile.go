@@ -21,7 +21,7 @@ func NewDataFile(path string, fileId int64) (*DataFile, error) {
     return df, nil
 }
 
-func (df *DataFile) ForEachItem(fn func(rec *Record) error) error {
+func (df *DataFile) ForEachItem(fn func(rec *Record, offset int64) error) error {
     var offset int64 = 0
     for {
         rec, err := parseRecordAt(df, offset)
@@ -32,7 +32,7 @@ func (df *DataFile) ForEachItem(fn func(rec *Record) error) error {
             return err
         }
 
-        err = fn(rec)
+        err = fn(rec, offset)
         if err != nil {
             return err
         }

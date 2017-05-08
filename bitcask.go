@@ -19,33 +19,31 @@ var (
 )
 
 type BitCask struct {
-    mu          *sync.RWMutex
-    dir         string
-    keyDir      *KeyDir
-    activeFile  *ActiveFile
-    activeKD    *KeyDir
-    opts        *Options
-    version     uint64
-    recCache    *RecordCache
-    dfCache     *DataFileCache
-    isMerging   int32
-    minDataFileId int64
-    maxDataFileId int64
+    mu              *sync.RWMutex
+    dir             string
+    opts            *Options
+    activeFile      *ActiveFile
+    activeKD        *KeyDir
+    keyDir          *KeyDir
+    recCache        *RecordCache
+    dfCache         *DataFileCache
+    isMerging       int32
+    minDataFileId   int64
+    maxDataFileId   int64
 
-    // support slots
-    keysInSlot  map[uint32]map[string]bool
-    keysInTag   map[string]map[string]bool
+    // slots info
+    keysInSlot      map[uint32]map[string]bool
+    keysInTag       map[string]map[string]bool
 }
 
 func Open(dir string, opts *Options) (*BitCask, error) {
     bc := &BitCask{
-        dir: dir,
-        activeFile: nil,
-        keyDir: NewKeyDir(),
-        activeKD: NewKeyDir(),
         mu: &sync.RWMutex{},
+        dir: dir,
         opts: opts,
-        version: 0,
+        activeFile: nil,
+        activeKD: NewKeyDir(),
+        keyDir: NewKeyDir(),
         isMerging: 0,
         minDataFileId: 0,
         maxDataFileId: 0,
@@ -54,17 +52,21 @@ func Open(dir string, opts *Options) (*BitCask, error) {
     }
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
-    log.Printf("open bitcask at %s", dir)
+    log.Printf("open at %s", dir)
 
     err := bc.Restore()
     if err != nil {
-        log.Println(err)
+        log.Printf("restore failed, err = %s", err)
         return nil, err
     }
+    log.Printf("open succ.")
     return bc, nil
 }
 
 func (bc *BitCask) Restore() error {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     begin := time.Now()
     files, err := ioutil.ReadDir(bc.dir)
     if err != nil {
@@ -72,14 +74,12 @@ func (bc *BitCask) Restore() error {
         return err
     }
 
-    lastId := int64(0)
     for _, file := range files {
         name := file.Name()
         var err error
         var id int64
         id, err = getIdFromDataPath(name)
         if err != nil {
-            // log.Printf("invalid datafile name[%s], skip\n", name)
             continue
         }
 
@@ -87,38 +87,34 @@ func (bc *BitCask) Restore() error {
         hintPath := bc.getHintFilePath(id)
 
         var kd *KeyDir
-        // if hintfile exists, restore from hintfile
         if _, err = os.Stat(hintPath); err == nil {
+            // if hintfile exists, restore from hintfile
             kd, err = bc.restoreFromHintFile(hintPath, id)
-        } else { // otherwise, restore from datafile
+        } else {
+            // otherwise, restore from datafile
             kd, err = bc.restoreFromDataFile(dataPath, id)
         }
         if err != nil {
             log.Fatal(err)
         }
 
-        if id > lastId {
-            bc.activeKD = kd
-            lastId = id
-        }
         if id < bc.minDataFileId {
             bc.minDataFileId = id
         }
         if id > bc.maxDataFileId {
             bc.maxDataFileId = id
+            bc.activeKD = kd
         }
     }
 
     // make active file
-    bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(lastId), lastId, bc.opts.bufferSize)
+    bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(bc.maxDataFileId), bc.maxDataFileId, bc.opts.bufferSize)
     if err != nil {
-        log.Println(err)
         return err
     }
 
     end := time.Now()
     log.Printf("bitcask restore succ! costs %.2f seconds.", end.Sub(begin).Seconds())
-
     return nil
 }
 
@@ -189,20 +185,19 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
     if err != nil {
         return nil, err
     }
-    iter := NewRecordIter(df)
+
     activeKD := NewKeyDir()
-    for iter.Reset(); iter.Valid(); iter.Next() {
-        rec := iter.rec
+    err = df.ForEachItem(func (rec *Record, offset int64) error {
         di := &DirItem{
-            fileId: iter.df.id,
-            valuePos: iter.recPos + RecordValueOffset(),
+            fileId: df.id,
+            valuePos: offset + RecordValueOffset(),
             valueSize: rec.valueSize,
             expration: rec.expration,
         }
         if err := bc.updateKeyDir(rec.key, di, activeKD, true); err != nil {
             return nil, err
         }
-    }
+    })
     return activeKD, nil
 }
 

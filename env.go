@@ -101,6 +101,12 @@ func (bc *BitCask) unrefDataFile(fileId int64) {
     }
 }
 
+func (bc *BitCask) RefRecord(fileId int64, offset int64) (*Record, error) {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+    return bc.refRecord(fileId, offset)
+}
+
 func (bc *BitCask) refRecord(fileId int64, offset int64) (*Record, error) {
     if bc.recCache != nil {
         return bc.recCache.Ref(fileId, offset)
@@ -116,6 +122,13 @@ func (bc *BitCask) refRecord(fileId int64, offset int64) (*Record, error) {
         return rec, nil
     }
 }
+
+func (bc *BitCask) UnrefRecord(fileId int64, offset int64) {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+    bc.unrefRecord(fileId, offset)
+}
+
 func (bc *BitCask) unrefRecord(fileId int64, offset int64) {
     if bc.recCache != nil {
         bc.recCache.Unref(fileId, offset)

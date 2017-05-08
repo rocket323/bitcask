@@ -3,7 +3,6 @@ package bitcask
 import (
     "hash/crc32"
     "bytes"
-    "io"
     "fmt"
     "sync"
     "io/ioutil"
@@ -419,6 +418,9 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
 }
 
 func (bc *BitCask) Close() error {
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
+
     bc.activeFile.Close()
     if bc.recCache != nil {
         bc.recCache.Close()
@@ -458,7 +460,7 @@ ways to sync file
 2. append to current active file
 3. del data file
 */
-func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.Reader) error {
+func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byte) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
@@ -476,13 +478,6 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, reader io.
     if af.Size() != offset {
         log.Printf("cur active file[%d] size[%d] != offset[%d]", af.id, af.Size(), offset)
         return ErrInvalid
-    }
-
-    data := make([]byte, int(length))
-    _, err := reader.Read(data)
-    if err != nil {
-        log.Printf("read record data failed, err = %s", err)
-        return err
     }
 
     rec, err := parseRecord(data)

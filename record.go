@@ -245,7 +245,7 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
 
     rec, err := parseRecordAt(fr, offset)
     if err != nil {
-        log.Printf("fileId %d, offset: %d, size: %d", fileId, offset, fr.Size())
+        log.Printf("fileId %d, offset: %d, size: %d, err = %s", fileId, offset, fr.Size(), err)
         return nil, err
     }
     rc.cache.Put(recKey, rec)

@@ -9,7 +9,6 @@ import (
     "log"
     "time"
     "os"
-    "path/filepath"
 )
 
 var (
@@ -36,22 +35,26 @@ type BitCask struct {
     keysInTag       map[string]map[string]bool
 }
 
+func (bc *BitCask) clear() {
+    bc.activeFile = nil
+    bc.activeKD = NewKeyDir()
+    bc.keyDir = NewKeyDir()
+    bc.isMerging = 0
+    bc.minDataFileId = 0
+    bc.maxDataFileId = 0
+    bc.keysInSlot = make(map[uint32]map[string]bool)
+    bc.keysInTag = make(map[string]map[string]bool)
+    bc.recCache = NewRecordCache(bc)
+    bc.dfCache = NewDataFileCache(bc)
+}
+
 func Open(dir string, opts *Options) (*BitCask, error) {
     bc := &BitCask{
         mu: &sync.RWMutex{},
         dir: dir,
         opts: opts,
-        activeFile: nil,
-        activeKD: NewKeyDir(),
-        keyDir: NewKeyDir(),
-        isMerging: 0,
-        minDataFileId: 0,
-        maxDataFileId: 0,
-        keysInSlot: make(map[uint32]map[string]bool),
-        keysInTag: make(map[string]map[string]bool),
     }
-    bc.recCache = NewRecordCache(bc)
-    bc.dfCache = NewDataFileCache(bc)
+    bc.clear()
     log.Printf("open at %s", dir)
 
     err := bc.Restore()
@@ -74,6 +77,7 @@ func (bc *BitCask) Restore() error {
         return err
     }
 
+    var corrupted bool = false
     for _, file := range files {
         name := file.Name()
         var err error
@@ -82,20 +86,33 @@ func (bc *BitCask) Restore() error {
         if err != nil {
             continue
         }
+        if corrupted {
+            err := bc.removeDataFile(id)
+            if err != nil {
+                log.Fatalf("remove data-file[%d] failed, err = %s", id, err)
+                return err
+            }
+            continue
+        }
 
         dataPath := bc.GetDataFilePath(id)
         hintPath := bc.getHintFilePath(id)
 
         var kd *KeyDir
         if _, err = os.Stat(hintPath); err == nil {
-            // if hintfile exists, restore from hintfile
             kd, err = bc.restoreFromHintFile(hintPath, id)
         } else {
-            // otherwise, restore from datafile
             kd, err = bc.restoreFromDataFile(dataPath, id)
         }
         if err != nil {
-            log.Fatal(err)
+            log.Printf("data-file[%d], corrupted! remove it.", id)
+            err := bc.removeDataFile(id)
+            if err != nil {
+                log.Fatalf("remove data-file[%d] failed, err = %s", id, err)
+                return err
+            }
+            corrupted = true
+            continue
         }
 
         if id < bc.minDataFileId {
@@ -162,6 +179,7 @@ func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
     activeKD := NewKeyDir()
     err = hf.ForEachItem(func (item *HintItem) error {
         di := &DirItem{
+            flag: item.flag,
             fileId: hf.id,
             valuePos: item.valuePos,
             valueSize: item.valueSize,
@@ -189,19 +207,24 @@ func (bc *BitCask) restoreFromDataFile(path string, id int64) (*KeyDir, error) {
     activeKD := NewKeyDir()
     err = df.ForEachItem(func (rec *Record, offset int64) error {
         di := &DirItem{
+            flag: rec.flag,
             fileId: df.id,
             valuePos: offset + RecordValueOffset(),
             valueSize: rec.valueSize,
             expration: rec.expration,
         }
         if err := bc.updateKeyDir(rec.key, di, activeKD, true); err != nil {
-            return nil, err
+            return err
         }
+        return nil
     })
+    if err != nil {
+        return nil, err
+    }
     return activeKD, nil
 }
 
-func (bc *BitCask) Get(key string) ([]byte, error) {
+func (bc *BitCask) Get(key []byte) ([]byte, error) {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
@@ -210,61 +233,53 @@ func (bc *BitCask) Get(key string) ([]byte, error) {
         return nil, err
     }
 
-    if di.valueSize < 0 {
+    if di.flag & RECORD_FLAG_DELETED > 0 {
         log.Printf("key[%s] has been deleted", string(key))
         return nil, ErrKeyNotFound
     }
 
-    rec, err := bc.refRecord(di.fileId, di.valuePos - RecordValueOffset())
+    rec, err := bc.refRecord(di.fileId, int64(di.valuePos) - RecordValueOffset())
     if err != nil {
-        log.Printf("ref file[%d] at offset[%d] failed, err=%s\n", di.fileId, di.valuePos - RecordValueOffset(), err)
+        log.Printf("ref file[%d] at offset[%d] failed, err=%s\n", di.fileId, int64(di.valuePos) - RecordValueOffset(), err)
         return nil, err
     }
-    defer bc.unrefRecord(di.fileId, di.valuePos - RecordValueOffset())
-
+    defer bc.unrefRecord(di.fileId, int64(di.valuePos) - RecordValueOffset())
     return rec.value, nil
 }
 
-func (bc *BitCask) Del(key string) error {
+func (bc *BitCask) Del(key []byte) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
-
-    bc.version++
 
     rec := &Record{
         flag: RECORD_FLAG_DELETED,
         keySize: int64(len(key)),
         key: make([]byte, len(key)),
     }
-    copy(rec.key, []byte(key))
-
+    copy(rec.key, key)
     return bc.addRecord(rec, false)
 }
 
-func (bc *BitCask) DelLocal(key string) error {
+func (bc *BitCask) DelLocal(key []byte) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
-
-    bc.version++
 
     rec := &Record{
         flag: RECORD_FLAG_DELETED,
         keySize: int64(len(key)),
         key: make([]byte, len(key)),
     }
-    copy(rec.key, []byte(key))
+    copy(rec.key, key)
     return bc.addRecord(rec, true)
 }
 
-func (bc *BitCask) Set(key string, val []byte) error {
-    return bc.SetWithExpr([]byte(key), val, 0)
+func (bc *BitCask) Set(key []byte, val []byte) error {
+    return bc.SetWithExpr(key, val, 0)
 }
 
 func (bc *BitCask) SetWithExpr(key []byte, value []byte, expration uint32) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
-
-    bc.version++
 
     keySize := len(key)
     valueSize := len(value)
@@ -275,9 +290,8 @@ func (bc *BitCask) SetWithExpr(key []byte, value []byte, expration uint32) error
         value: make([]byte, valueSize),
         key: make([]byte, keySize),
     }
-    copy(rec.key, []byte(key))
+    copy(rec.key, key)
     copy(rec.value, value)
-
     return bc.addRecord(rec, false)
 }
 
@@ -311,7 +325,7 @@ func HashKeyToSlot(key []byte) ([]byte, uint32) {
 func (bc *BitCask) AddRecord(rec *Record, fillSlot bool) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
-    return bc.addRecord(rec, local)
+    return bc.addRecord(rec, fillSlot)
 }
 
 // requires bc.mu held
@@ -323,13 +337,14 @@ func (bc *BitCask) addRecord(rec *Record, fillSlot bool) error {
     }
 
     di := &DirItem{
+        flag: rec.flag,
         fileId: bc.activeFile.id,
         valuePos: offset + RecordValueOffset(),
         valueSize: rec.valueSize,
         expration: rec.expration,
     }
 
-    if err := bc.updateKeyDir(di, rec.key, bc.activeKD, local); err != nil {
+    if err := bc.updateKeyDir(rec.key, di, bc.activeKD, fillSlot); err != nil {
         return err
     }
 
@@ -353,10 +368,10 @@ func (bc *BitCask) rotateActiveFile() error {
 
     af, err := NewActiveFile(bc.GetDataFilePath(nextFileId), nextFileId, bc.opts.bufferSize)
     if err != nil {
-        log.Println(err)
         return err
     }
     bc.activeFile = af
+    bc.maxDataFileId = nextFileId
 
     return nil
 }
@@ -370,15 +385,15 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
 
     for key, di := range bc.activeKD.mp {
         hi := &HintItem{
+            flag: di.flag,
             expration: di.expration,
-            keySize: int64(len(key)),
             valueSize: di.valueSize,
             valuePos: di.valuePos,
+            keySize: int64(len(key)),
             key: []byte(key),
         }
         err := hf.AddItem(hi)
         if err != nil {
-            log.Println(err)
             return err
         }
     }
@@ -388,7 +403,10 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
 func (bc *BitCask) Close() error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
+    return bc.close()
+}
 
+func (bc *BitCask) close() error {
     bc.activeFile.Close()
     if bc.recCache != nil {
         bc.recCache.Close()
@@ -399,56 +417,72 @@ func (bc *BitCask) Close() error {
     return nil
 }
 
-func ClearAll(dir string) error {
-    log.Println("clearing db[%s]...", dir)
+func (bc *BitCask) ClearAll() error {
+    log.Println("clearing db[%s]...", bc.dir)
+    bc.mu.Lock()
+    defer bc.mu.Unlock()
 
-    d, err := os.Open(dir)
+    bc.close()
+    bc.clear()
+    if err := os.RemoveAll(bc.dir); err != nil {
+        log.Printf("remove dir[%s] failed, err = %s", bc.dir, err)
+    }
+
+    // make active file
+    var err error
+    bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(bc.maxDataFileId), bc.maxDataFileId, bc.opts.bufferSize)
     if err != nil {
         return err
     }
-    defer d.Close()
-    names, err := d.Readdirnames(-1)
-    if err != nil {
-        return err
-    }
-    for _, name := range names {
-        err = os.RemoveAll(filepath.Join(dir, name))
-        if err != nil {
-            return err
-        }
-    }
 
-    log.Println("clear db[%s] succ!", dir)
+    log.Println("clear db[%s] succ!", bc.dir)
     return nil
 }
 
-// truncate database to specific state
-func Truncate(fileId int64, size int64) error {
+func (bc *BitCask) removeDataFile(fileId int64) error {
+    dataPath := bc.GetDataFilePath(fileId)
+    hintPath := bc.getHintFilePath(fileId)
+    if err := os.Remove(dataPath); err != nil {
+        return err
+    }
+    if err := os.Remove(hintPath); err != nil {
+        return err
+    }
+    return nil
 }
 
 /*
-ways to sync file
-1. new active file
-2. append to current active file
-3. del data file
+1. del data file
+2. append to current active file(maybe rotate to next active file)
 */
 func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byte) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
+    // 1. delete file
+    if offset == -1 {
+        if fileId == bc.activeFile.id {
+            bc.rotateActiveFile()
+        } else if fileId < bc.activeFile.id {
+            return bc.removeDataFile(fileId)
+        } else {
+            return nil
+        }
+    }
+
+    // 2. append record
+    if fileId == bc.activeFile.id + 1 {
+        bc.rotateActiveFile()
+    }
     af := bc.activeFile
 
-    if fileId == af.id + 1 {
-        bc.rotateActiveFile()
-        af = bc.activeFile
-    }
     if fileId != af.id {
-        log.Printf("invalid sync fileId[%d] != active fileId[%d]", fileId, af.id)
+        log.Printf("invalid sync, active fileId[%d] != sync fildId[%d]", af.id, fileId)
         return ErrInvalid
     }
 
     if af.Size() != offset {
-        log.Printf("cur active file[%d] size[%d] != offset[%d]", af.id, af.Size(), offset)
+        log.Printf("invalid sync, active file[%d], size[%d] != sync offset[%d]", af.id, af.Size(), offset)
         return ErrInvalid
     }
 
@@ -467,25 +501,6 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byt
     return nil
 }
 
-func (bc *BitCask) EnableCache(enable bool) {
-    bc.mu.Lock()
-    defer bc.mu.Unlock()
-
-    if enable {
-        bc.recCache = NewRecordCache(bc)
-        bc.dfCache = NewDataFileCache(bc)
-    } else {
-        if bc.recCache != nil {
-            bc.recCache.Close()
-            bc.recCache = nil
-        }
-        if bc.dfCache != nil {
-            bc.dfCache.Close()
-            bc.dfCache = nil
-        }
-    }
-}
-
 func (bc *BitCask) FirstKeyUnderSlot(slot uint32) ([]byte, error) {
     bc.mu.Lock()
     defer bc.mu.Unlock()
@@ -494,7 +509,7 @@ func (bc *BitCask) FirstKeyUnderSlot(slot uint32) ([]byte, error) {
     if keys == nil {
         return nil, nil
     }
-    // return one random key
+    // return a random key
     for k, _ := range keys {
         delete(keys, k)
         return []byte(k), nil

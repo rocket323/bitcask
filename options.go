@@ -8,13 +8,12 @@ type Options struct {
 }
 
 func NewOptions() *Options {
-    op := &Options {
+    return &Options{
         maxFileSize: 100 * 1024 * 1024,
         cacheSize: 100 * 1024 * 1024,
         maxOpenFiles: 4096,
         bufferSize: 10 * 1024 + 10,
     }
-    return op
 }
 
 func (o *Options) SetMaxFileSize(n int64) {

@@ -11,7 +11,7 @@ import (
 
 type Record struct {
     crc32       uint32
-    flag        uint16
+    flag        uint8
     expration   uint32
     valueSize   int64
     keySize     int64
@@ -25,11 +25,11 @@ const (
 )
 
 const (
-    RECORD_HEADER_SIZE = 26
+    RECORD_HEADER_SIZE = 25
 )
 
 func (r *Record) Size() int64 {
-    return RECORD_HEADER_SIZE + r.keySize + r.valueSize
+    return RECORD_HEADER_SIZE + int64(r.keySize + r.valueSize)
 }
 
 func RecordValueOffset() int64 {
@@ -75,10 +75,10 @@ func parseRecordAt(r io.ReaderAt, offset int64) (*Record, error) {
 
     rec := &Record{
         crc32:          uint32(binary.LittleEndian.Uint32(header[0:4])),
-        flag:           uint16(binary.LittleEndian.Uint16(header[4:6])),
-        expration:      uint32(binary.LittleEndian.Uint32(header[6:10])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[10:18])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[18:26])),
+        flag:           header[4],
+        expration:      uint32(binary.LittleEndian.Uint32(header[5:9])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[9:17])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[17:25])),
     }
 
     offset += RECORD_HEADER_SIZE
@@ -158,7 +158,6 @@ func (rc *RecordCache) Ref(fileId int64, offset int64) (*Record, error) {
 
     rec, err := parseRecordAt(fr, offset)
     if err != nil {
-        // log.Printf("fileId %d, offset: %d, size: %d, err = %s", fileId, offset, fr.Size(), err)
         return nil, err
     }
     rc.cache.Put(recKey, rec)

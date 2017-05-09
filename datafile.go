@@ -1,6 +1,7 @@
 package bitcask
 
 import (
+    "io"
     "github.com/rocket323/bitcask/lru"
 )
 
@@ -26,7 +27,7 @@ func (df *DataFile) ForEachItem(fn func(rec *Record, offset int64) error) error 
     for {
         rec, err := parseRecordAt(df, offset)
         if err != nil {
-            if err = io.EOF {
+            if err == io.EOF {
                 break
             }
             return err

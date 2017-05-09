@@ -8,24 +8,26 @@ import (
 )
 
 type HintItem struct {
+    flag            uint8
     expration       uint32
-    keySize         int64
     valueSize       int64
     valuePos        int64
+    keySize         int64
     key             []byte
 }
 
 const (
-    HINT_ITEM_HEADER_SIZE = 28
+    HINT_ITEM_HEADER_SIZE = 29
 )
 
 func (hi *HintItem) Encode() ([]byte, error) {
     buf := new(bytes.Buffer)
     var data = []interface{}{
+        hi.flag,
         hi.expration,
-        hi.keySize,
         hi.valueSize,
         hi.valuePos,
+        hi.keySize,
         hi.key,
     }
 
@@ -47,10 +49,11 @@ func parseHintItemAt(f FileReader, offset int64) (*HintItem, error) {
     }
 
     hi := &HintItem{
-        expration:      uint32(binary.LittleEndian.Uint32(header[0:4])),
-        keySize:        int64(binary.LittleEndian.Uint64(header[4:12])),
-        valueSize:      int64(binary.LittleEndian.Uint64(header[12:20])),
-        valuePos:       int64(binary.LittleEndian.Uint64(header[20:28])),
+        flag:           uint8(header[0]),
+        expration:      uint32(binary.LittleEndian.Uint32(header[1:5])),
+        valueSize:      int64(binary.LittleEndian.Uint64(header[5:13])),
+        valuePos:       int64(binary.LittleEndian.Uint64(header[13:21])),
+        keySize:        int64(binary.LittleEndian.Uint64(header[21:29])),
     }
 
     offset += HINT_ITEM_HEADER_SIZE
@@ -98,7 +101,7 @@ func (hf *HintFile) ForEachItem(fn func(item *HintItem) error) error {
             return err
         }
 
-        offset += HINT_ITEM_HEADER_SIZE + hi.keySize
+        offset += HINT_ITEM_HEADER_SIZE + int64(hi.keySize)
     }
     return nil
 }

@@ -6,11 +6,11 @@ import (
     "sync/atomic"
 )
 
-func (bc *BitCask) Merge(done chan int, files chan int64) {
-    go bc.merge(done, files)
+func (bc *BitCask) Merge(done chan int) {
+    go bc.merge(done)
 }
 
-func (bc *BitCask) merge(done chan int, files chan int64) {
+func (bc *BitCask) merge(done chan int) {
     if !atomic.CompareAndSwapInt32(&bc.isMerging, 0, 1) {
         log.Println("there is a merge process running.")
         return
@@ -23,22 +23,26 @@ func (bc *BitCask) merge(done chan int, files chan int64) {
     end := bc.activeFile.id
     bc.mu.Unlock()
 
-    for begin := bc.minDataFileId; begin < end; begin = bc.NextDataFileId(begin) {
-        err := bc.mergeDataFile(begin)
+    for fileId := bc.minDataFileId; fileId < end; fileId = bc.NextDataFileId(fileId) {
+        err := bc.mergeDataFile(fileId)
         if err != nil {
-            log.Println("merge datafile[%d] failed, err=%s", begin, err)
+            log.Println("merge data-file[%d] failed, err=%s", fileId, err)
             return
         }
-        if files != nil {
-            files <- begin
+
+        // add delete file record
+        rec := &Record{
+            flag: RECORD_FLAG_MERGE,
+            valueSize: fileId,
+        }
+        if err := bc.AddRecord(rec, false); err != nil {
+            log.Printf("add merge info for data-file[%d] failed, err = %s", fileId, err)
+            return
         }
     }
     d := time.Now().Sub(begin)
     log.Printf("merge succ. cost %.2f seconds", d.Seconds())
     done <- 1
-    if files != nil {
-        close(files)
-    }
 }
 
 func (bc *BitCask) mergeDataFile(fileId int64) error {

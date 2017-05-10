@@ -459,18 +459,6 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byt
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
-    // 1. delete file
-    if offset == -1 {
-        if fileId == bc.activeFile.id {
-            bc.rotateActiveFile()
-        } else if fileId < bc.activeFile.id {
-            return bc.removeDataFile(fileId)
-        } else {
-            return nil
-        }
-    }
-
-    // 2. append record
     if fileId == bc.activeFile.id + 1 {
         bc.rotateActiveFile()
     }
@@ -490,6 +478,15 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byt
     if err != nil {
         log.Printf("parse record failed, err = %s", err)
         return err
+    }
+
+    // if it's a merge record
+    if rec.flag & RECORD_FLAG_MERGE > 0 {
+        f := rec.valueSize
+        if err := bc.removeDataFile(f); err != nil {
+            log.Printf("remove merged file[%d] failed, err = %s", fileId, err)
+            return err
+        }
     }
 
     err = bc.addRecord(rec, false)

@@ -22,6 +22,7 @@ type Record struct {
 const (
     RECORD_FLAG_DELETED = 1 << iota
     RECORD_FLAG_BATCH
+    RECORD_FLAG_MERGE       // record for merge info, i.e. delete file
 )
 
 const (
@@ -80,28 +81,30 @@ func parseRecordAt(r io.ReaderAt, offset int64) (*Record, error) {
         valueSize:      int64(binary.LittleEndian.Uint64(header[9:17])),
         keySize:        int64(binary.LittleEndian.Uint64(header[17:25])),
     }
+    crc := crc32.ChecksumIEEE(header[4:])
 
-    offset += RECORD_HEADER_SIZE
-    rec.value = make([]byte, rec.valueSize)
-    _, err = r.ReadAt(rec.value, offset)
-    if err != nil {
-        log.Println(err)
-        return nil, err
-    }
+    if rec.flag & RECORD_FLAG_MERGE == 0 {
+        offset += RECORD_HEADER_SIZE
+        rec.value = make([]byte, rec.valueSize)
+        _, err = r.ReadAt(rec.value, offset)
+        if err != nil {
+            log.Println(err)
+            return nil, err
+        }
 
-    offset += rec.valueSize
-    rec.key = make([]byte, rec.keySize)
-    _, err = r.ReadAt(rec.key, offset)
-    if err != nil {
-        log.Println(err)
-        return nil, err
+        offset += rec.valueSize
+        rec.key = make([]byte, rec.keySize)
+        _, err = r.ReadAt(rec.key, offset)
+        if err != nil {
+            log.Println(err)
+            return nil, err
+        }
+
+        crc = crc32.Update(crc, crc32.IEEETable, rec.value)
+        crc = crc32.Update(crc, crc32.IEEETable, rec.key)
     }
 
     // check crc
-    crc := crc32.ChecksumIEEE(header[4:])
-    crc = crc32.Update(crc, crc32.IEEETable, rec.value)
-    crc = crc32.Update(crc, crc32.IEEETable, rec.key)
-
     if crc != rec.crc32 {
         return nil, ErrRecordCorrupted
     }

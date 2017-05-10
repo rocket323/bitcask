@@ -138,10 +138,13 @@ func (bc *BitCask) Restore() error {
 func (bc *BitCask) updateKeyDir(key []byte, di *DirItem, akd *KeyDir, fillSlot bool) error {
     old, err := bc.keyDir.Get(key)
     // add to keydir
-    if (err != nil && di.fileId >= old.fileId) || err == ErrKeyNotFound {
+    if (err == nil && di.fileId >= old.fileId) || err == ErrKeyNotFound {
         if err := bc.keyDir.Put(key, di); err != nil {
             return err
         }
+    }
+    if err != ErrKeyNotFound {
+        return err
     }
     // add to active keydir
     if akd != nil {
@@ -166,7 +169,7 @@ func (bc *BitCask) updateKeyDir(key []byte, di *DirItem, akd *KeyDir, fillSlot b
         }
     }
 
-    return err
+    return nil
 }
 
 func (bc *BitCask) restoreFromHintFile(path string, id int64) (*KeyDir, error) {
@@ -336,16 +339,18 @@ func (bc *BitCask) addRecord(rec *Record, fillSlot bool) error {
         return err
     }
 
-    di := &DirItem{
-        flag: rec.flag,
-        fileId: bc.activeFile.id,
-        valuePos: offset + RecordValueOffset(),
-        valueSize: rec.valueSize,
-        expration: rec.expration,
-    }
+    if rec.flag & RECORD_FLAG_MERGE == 0 {
+        di := &DirItem{
+            flag: rec.flag,
+            fileId: bc.activeFile.id,
+            valuePos: offset + RecordValueOffset(),
+            valueSize: rec.valueSize,
+            expration: rec.expration,
+        }
 
-    if err := bc.updateKeyDir(rec.key, di, bc.activeKD, fillSlot); err != nil {
-        return err
+        if err := bc.updateKeyDir(rec.key, di, bc.activeKD, fillSlot); err != nil {
+            return err
+        }
     }
 
     if bc.activeFile.Size() >= bc.opts.maxFileSize {

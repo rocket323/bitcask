@@ -131,7 +131,7 @@ func (bc *BitCask) Restore() error {
     }
 
     end := time.Now()
-    log.Printf("bitcask restore succ! costs %.2f seconds.", end.Sub(begin).Seconds())
+    log.Printf("restore succ! costs %.2f seconds.", end.Sub(begin).Seconds())
     return nil
 }
 

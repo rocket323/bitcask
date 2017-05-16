@@ -33,6 +33,9 @@ type BitCask struct {
     // slots info
     keysInSlot      map[uint32]map[string]bool
     keysInTag       map[string]map[string]bool
+
+    // hint files
+    fileMetas       []*FileMeta
 }
 
 func (bc *BitCask) clear() {
@@ -44,6 +47,7 @@ func (bc *BitCask) clear() {
     bc.maxDataFileId = 0
     bc.keysInSlot = make(map[uint32]map[string]bool)
     bc.keysInTag = make(map[string]map[string]bool)
+    bc.fileMetas = make([]FileMeta)
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
 }
@@ -57,7 +61,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
     bc.clear()
     log.Printf("open at %s", dir)
 
-    err := bc.Restore()
+    err := bc.Restore(-1)
     if err != nil {
         log.Printf("restore failed, err = %s", err)
         return nil, err
@@ -66,7 +70,7 @@ func Open(dir string, opts *Options) (*BitCask, error) {
     return bc, nil
 }
 
-func (bc *BitCask) Restore() error {
+func (bc *BitCask) Restore(fileIdRange int64) error {
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
@@ -86,7 +90,12 @@ func (bc *BitCask) Restore() error {
         if err != nil {
             continue
         }
-        if corrupted {
+        var outOfRange bool = false
+        if fileIdRange >= 0 && id >= fileIdRange {
+            outOfRange = true
+        }
+
+        if corrupted || outOfRange {
             err := bc.removeDataFile(id)
             if err != nil {
                 log.Fatalf("remove data-file[%d] failed, err = %s", id, err)
@@ -115,6 +124,13 @@ func (bc *BitCask) Restore() error {
             continue
         }
 
+        md5, err := bc.getDataFileMd5(id)
+        if err != nil {
+            log.Fatalf("calc md5 for data-file[%d] failed, err = %s", id, err)
+            return err
+        }
+        bc.addFileMeta(id, md5)
+
         if id < bc.minDataFileId {
             bc.minDataFileId = id
         }
@@ -128,6 +144,11 @@ func (bc *BitCask) Restore() error {
     bc.activeFile, err = NewActiveFile(bc.GetDataFilePath(bc.maxDataFileId), bc.maxDataFileId, bc.opts.bufferSize)
     if err != nil {
         return err
+    }
+
+    // remove active file meta
+    if len(bc.fileMetas) > 0 {
+        bc.fileMetas = bc.fileMetas[:len(bc.fileMetas) - 1]
     }
 
     end := time.Now()
@@ -359,13 +380,12 @@ func (bc *BitCask) addRecord(rec *Record, fillSlot bool) error {
     }
 
     if bc.activeFile.Size() >= bc.opts.maxFileSize {
-        bc.rotateActiveFile()
+        bc.rotateActiveFile(bc.activeFile.id + 1)
     }
     return nil
 }
 
-func (bc *BitCask) rotateActiveFile() error {
-    nextFileId := bc.activeFile.id + 1
+func (bc *BitCask) rotateActiveFile(nextFileId int64) error {
     log.Printf("rotate activeFile to %d", nextFileId)
     bc.activeFile.Close()
 
@@ -386,12 +406,46 @@ func (bc *BitCask) rotateActiveFile() error {
     return nil
 }
 
+func (bc *BitCask) getDataFileMd5(fileId int64) ([]byte, error) {
+    path := bc.GetDataFilePath(fileId)
+    f, err := os.Open(path)
+    if err != nil {
+        return nil, err
+    }
+    defer f.Close()
+    h := md5.New()
+    if _, err = io.Copy(h, f); err != nil {
+        return nil, err
+    }
+    md5sum := h.Sum(nil)
+    return md5sum[:], nil
+}
+
+func (bc *BitCask) addFileMeta(fileId int64, md5 []byte) {
+    meta := &FileMeta{
+        id: fileId,
+        md5: md5,
+    }
+    bc.fileMetas = append(bc.fileMetas, meta)
+}
+
 func (bc *BitCask) generateHintFile(fileId int64) error {
     hf, err := NewHintFile(bc.getHintFilePath(fileId), fileId, bc.opts.bufferSize)
     if err != nil {
         return err
     }
     defer hf.Close()
+
+    // write md5sum to hint file header
+    md5, err := bc.getDataFileMd5(fileId)
+    if err != nil {
+        return err
+    }
+    bc.addFileMeta(fileId, md5)
+
+    if err := hf.WriteHeader(md5); err != nil {
+        return err
+    }
 
     for key, di := range bc.activeKD.mp {
         hi := &HintItem{
@@ -407,7 +461,13 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
             return err
         }
     }
+
+    bc.hintFiles = append(bc.hintFiles, hf)
     return nil
+}
+
+func (bc *BitCask) GetFileMetas() []FileMeta {
+    return bc.fileMetas
 }
 
 func (bc *BitCask) Close() error {
@@ -428,7 +488,7 @@ func (bc *BitCask) close() error {
 }
 
 func (bc *BitCask) ClearAll() error {
-    log.Println("clearing db[%s]...", bc.dir)
+    log.Printf("clearing db[%s]...", bc.dir)
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
@@ -449,7 +509,24 @@ func (bc *BitCask) ClearAll() error {
         return err
     }
 
-    log.Println("clear db[%s] succ!", bc.dir)
+    log.Printf("clear db[%s] succ!", bc.dir)
+    return nil
+}
+
+// truncate bitcask database to [0, fileId)
+func (bc *BitCask) Truncate(fileId int64) error {
+    log.Printf("truncate db[%s] to [0, %d)", bc.dir, fileId)
+    bc.mu.Lock()
+    bc.mu.Unlock()
+
+    bc.close()
+    bc.clear()
+
+    err := bc.Restore(fileId)
+    if err != nil {
+        log.Fatalf("truncate db[%s] to [0, %d) failed, err = %s", bc.dir, fileId, err)
+        return err
+    }
     return nil
 }
 
@@ -473,8 +550,8 @@ func (bc *BitCask) SyncFile(fileId int64, offset int64, length int64, data []byt
     bc.mu.Lock()
     defer bc.mu.Unlock()
 
-    if fileId == bc.activeFile.id + 1 {
-        bc.rotateActiveFile()
+    if fileId > bc.activeFile.id {
+        bc.rotateActiveFile(fileId)
     }
     af := bc.activeFile
 

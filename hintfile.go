@@ -5,6 +5,7 @@ import (
     "bytes"
     "encoding/binary"
     "log"
+    "crypto/md5"
 )
 
 type HintItem struct {
@@ -17,6 +18,7 @@ type HintItem struct {
 }
 
 const (
+    HINT_FILE_HEADER_SIZE = 8 + md5.Size
     HINT_ITEM_HEADER_SIZE = 29
 )
 
@@ -72,6 +74,11 @@ type HintFile struct {
     id int64
 }
 
+type FileMeta struct {
+    FileId int64
+    Md5 []byte
+}
+
 func NewHintFile(path string, id int64, wbufSize int64) (*HintFile, error) {
     f, err := NewFileWithBuffer(path, true, wbufSize)
     if err != nil {
@@ -85,8 +92,17 @@ func NewHintFile(path string, id int64, wbufSize int64) (*HintFile, error) {
     return hf, nil
 }
 
+func (hf *HintFile) WriteHeader(md5sum [md5.Size]byte) error {
+    if err := binary.Write(hf, binary.LittleEndian, hf.id); err != nil {
+        return err
+    }
+    if err := binary.Write(hf, binary.LittleEndian, md5sum); err != nil {
+        return err
+    }
+}
+
 func (hf *HintFile) ForEachItem(fn func(item *HintItem) error) error {
-    var offset int64 = 0
+    var offset int64 = HINT_FILE_HEADER_SIZE
     for {
         hi, err := parseHintItemAt(hf, offset)
         if err != nil {

@@ -2,6 +2,8 @@ package bitcask
 
 import (
     "hash/crc32"
+    "crypto/md5"
+    "io"
     "bytes"
     "fmt"
     "sync"
@@ -34,7 +36,7 @@ type BitCask struct {
     keysInSlot      map[uint32]map[string]bool
     keysInTag       map[string]map[string]bool
 
-    // hint files
+    // file metas: fileId, md5, etc.
     fileMetas       []*FileMeta
 }
 
@@ -47,7 +49,7 @@ func (bc *BitCask) clear() {
     bc.maxDataFileId = 0
     bc.keysInSlot = make(map[uint32]map[string]bool)
     bc.keysInTag = make(map[string]map[string]bool)
-    bc.fileMetas = make([]FileMeta)
+    bc.fileMetas = make([]*FileMeta, 0)
     bc.recCache = NewRecordCache(bc)
     bc.dfCache = NewDataFileCache(bc)
 }
@@ -423,8 +425,8 @@ func (bc *BitCask) getDataFileMd5(fileId int64) ([]byte, error) {
 
 func (bc *BitCask) addFileMeta(fileId int64, md5 []byte) {
     meta := &FileMeta{
-        id: fileId,
-        md5: md5,
+        FileId: fileId,
+        Md5: md5,
     }
     bc.fileMetas = append(bc.fileMetas, meta)
 }
@@ -462,11 +464,10 @@ func (bc *BitCask) generateHintFile(fileId int64) error {
         }
     }
 
-    bc.hintFiles = append(bc.hintFiles, hf)
     return nil
 }
 
-func (bc *BitCask) GetFileMetas() []FileMeta {
+func (bc *BitCask) GetFileMetas() []*FileMeta {
     return bc.fileMetas
 }
 

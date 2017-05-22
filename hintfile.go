@@ -92,13 +92,14 @@ func NewHintFile(path string, id int64, wbufSize int64) (*HintFile, error) {
     return hf, nil
 }
 
-func (hf *HintFile) WriteHeader(md5sum [md5.Size]byte) error {
+func (hf *HintFile) WriteHeader(md5sum []byte) error {
     if err := binary.Write(hf, binary.LittleEndian, hf.id); err != nil {
         return err
     }
     if err := binary.Write(hf, binary.LittleEndian, md5sum); err != nil {
         return err
     }
+    return nil
 }
 
 func (hf *HintFile) ForEachItem(fn func(item *HintItem) error) error {
